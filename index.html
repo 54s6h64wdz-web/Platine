@@ -194,6 +194,16 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 .round.spin svg{animation:spin 1s linear infinite}
 .sync-info{font-family:var(--mono);font-size:12px;color:var(--muted);margin:-6px 0 18px}
 .lib-seg{margin-bottom:20px}
+.p-actions{display:flex;gap:8px;align-items:center}
+.selbar{position:fixed;left:12px;right:12px;bottom:max(12px,calc(var(--sab) - 8px));z-index:12;display:flex;align-items:center;gap:6px;padding:8px;border-radius:18px;background:rgba(34,34,37,.95);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.selbar #selCount{flex:1;text-align:center;font-family:var(--mono);font-size:13px;color:var(--muted)}
+.selbar #selShare:disabled{opacity:.4}
+.selecting .mini{transform:translateY(120%);opacity:0;pointer-events:none}
+.selecting .row .ib{display:none}
+.selecting .row::after{content:"";width:24px;height:24px;border-radius:50%;border:2px solid var(--line);flex:none;margin-right:6px}
+.selecting .row.picked::after{background:var(--accent);border-color:var(--accent);box-shadow:inset 0 0 0 4px var(--surface)}
+.row{-webkit-touch-callout:none}
+.quick-a{padding:9px 13px;border-radius:10px;background:var(--surface2);font-family:var(--mono);font-size:13px;color:var(--text);text-decoration:none}
 .versions{display:flex;gap:8px;overflow-x:auto;padding:12px 2px 2px;margin:0 -20px;padding-left:20px;padding-right:20px;scrollbar-width:none;-webkit-overflow-scrolling:touch;touch-action:pan-x}
 .versions::-webkit-scrollbar{display:none}
 .v-lab{flex:none;align-self:center;font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
@@ -248,6 +258,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
   <header class="lib-head">
     <div class="brand"><h1>Platine<span>.</span></h1><small>by genetic</small></div>
     <div class="lib-actions">
+      <button class="round" id="btnSettings" aria-label="Paramètres"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       <button class="round" id="btnSync" aria-label="Synchroniser un dossier">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/></svg>
       </button>
@@ -268,7 +279,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
   </div>
   <div id="allTools" class="hidden">
     <div class="c-tools"><input type="search" class="search" id="allSearch" placeholder="Rechercher un son, un dossier, un BPM…" autocomplete="off"></div>
-    <div class="seg" id="allSort" style="margin:8px 0 6px"><button data-sort="recent" class="on">Récents</button><button data-sort="name">A → Z</button><button data-sort="bpm">BPM</button></div>
+    <div style="display:flex;gap:8px;align-items:center;margin:8px 0 6px"><div class="seg" id="allSort" style="flex:1;margin:0"><button data-sort="recent" class="on">Récents</button><button data-sort="name">A → Z</button><button data-sort="bpm">BPM</button></div><button class="pill" id="allSelect">Choisir</button></div>
   </div>
   <div id="grid" class="grid"></div>
   <p class="build"><span id="buildInfo"></span> · <button class="upd" id="btnUpdate">Mettre à jour</button> · <a class="upd" href="regle.html">Règle</a></p>
@@ -290,6 +301,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
     </button>
     <div class="c-title"><h2 id="cTitle"></h2><p id="cCount"></p></div>
+    <button class="pill" id="cSelect">Choisir</button>
     <button class="pill hidden" id="cEdit">Ordre</button>
     <button class="round accent" id="cPlayAll" aria-label="Tout lire">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.4-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>
@@ -320,7 +332,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
     <button class="round" id="pClose" aria-label="Fermer">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
     </button>
-    <button class="pill" id="pEdit">Modifier</button>
+    <div class="p-actions"><button class="round" id="pShare" aria-label="Partager"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button><button class="pill" id="pEdit">Modifier</button></div>
   </div>
   <div class="p-scroll">
     <div class="p-meta" id="pMeta">
@@ -379,9 +391,6 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
           <button class="tab rev" id="bRev" aria-label="Reverse">REV</button>
           <button class="tab" id="bAddPl" aria-label="Ajouter à une playlist">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h12M3 12h12M3 18h8M18 15v6M15 18h6"/></svg>
-          </button>
-          <button class="tab" id="bShare" aria-label="Partager le fichier">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
           </button>
         </div>
       </div>
@@ -492,12 +501,39 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
   </div>
 </div>
 
+<!-- ===== Barre de sélection ===== -->
+<div id="selBar" class="selbar hidden">
+  <button class="pill ghost" id="selCancel">Annuler</button>
+  <span id="selCount"></span>
+  <button class="pill ghost" id="selAll">Tout</button>
+  <button class="pill accent" id="selShare" disabled>Partager</button>
+</div>
+
+<!-- ===== Paramètres ===== -->
+<div id="settings" class="modal hidden">
+  <div class="modal-card">
+    <div class="m-head"><span style="width:60px"></span><b>Paramètres</b><button class="pill accent" id="stClose">OK</button></div>
+    <div class="ctl row"><span>Normaliser le volume par défaut</span><button class="switch" id="stNorm"><i></i></button></div>
+    <p class="hint">Chaque son est monté à −0,3 dB de crête (exports trop faibles). Un réglage manuel du volume reste prioritaire.</p>
+    <div class="ctl row"><span>Loop ∞ si le nom contient un BPM</span><button class="switch" id="stLoop"><i></i></button></div>
+    <p class="hint">Pour les nouveaux sons, et pour les versions dont le BPM est déduit des autres versions.</p>
+    <label style="margin-bottom:6px">Downbeat par défaut</label>
+    <div class="seg" id="stDown"><button data-d="start">Début du fichier</button><button data-d="auto">Détection auto</button></div>
+    <label style="margin:18px 0 6px">Bibliothèque</label>
+    <p class="hint" id="stLib" style="margin-top:0"></p>
+    <p class="hint" id="stStore"></p>
+    <label style="margin:18px 0 6px">Application</label>
+    <p class="hint" id="stVersion" style="margin-top:0"></p>
+    <div class="quick" style="margin-top:6px"><button id="stUpdate">Mettre à jour l'app</button><a class="quick-a" href="regle.html">Règle d'écran</a></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 18, version: '3.0.2', date: '15/11/2026' };
+const BUILD = { n: 19, version: '3.1', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -972,6 +1008,7 @@ let loopInfo = null;     // infos affichées (mesures, durée…)
 async function applyLoop() {
   const t = current; if (!t) return;
   t.loop = { ...LOOP_DEFAULT, ...(t.loop || {}) };
+  if (!t.loop.userSet && !ownBpm(t) && inferredBpm(t) && prefs.loopDefault) t.loop.on = true;   // version : BPM hérité → loop aussi
   const L = t.loop, bpm = bpmOf(t);
   if (!L.on || !bpm) { loopInfo = null; E.clearLoopInf(); renderLoopUI(); return; }
   let buf;
@@ -1071,7 +1108,7 @@ async function importOne(f, { project = IMPORTS, src = null, existing = null } =
   const t = {
     id, fileName: f.name, title: f.name.replace(/\.[^.]+$/, ''), project, src, size: f.size,
     artist: localStorage.getItem('platine.artist') || '',
-    bpm: meta.bpm, key: meta.key, notes: '', created: Date.now(), loop: { ...LOOP_DEFAULT, on: !!meta.bpm },
+    bpm: meta.bpm, key: meta.key, notes: '', created: Date.now(), loop: { ...LOOP_DEFAULT, on: prefs.loopDefault && !!meta.bpm, ...(prefs.downDefault === 'auto' ? { manualDown: false, autoChosen: true } : {}) },
     duration: info.duration, peaks: info.peaks, peakDb: info.peakDb,
     hue: Math.floor(Math.random() * 360), hasCover: false, settings: { ...DEFAULTS }
   };
@@ -1360,7 +1397,7 @@ function allTracks() {
 function rowHTML(t, i, showProject) {
   const cur = current && current.id === t.id;
   const sub = [showProject ? t.project : '', t.bpm ? t.bpm + ' BPM' : '', t.key, fmt(t.duration)].filter(Boolean).join(' · ');
-  return `<div class="row${cur ? ' cur' : ''}" data-id="${t.id}" data-i="${i}" style="animation-delay:${Math.min(i, 12) * 20}ms">
+  return `<div class="row${cur ? ' cur' : ''}${selIds.has(t.id) ? ' picked' : ''}" data-id="${t.id}" data-i="${i}" style="animation-delay:${Math.min(i, 12) * 20}ms">
     <div class="rc"${artAttr(t)} style="background-image:${coverCSS(t)}"></div>
     <div class="ri"><b>${esc(t.title)}</b><span>${esc(sub)}</span></div>
     <button class="ib radd" aria-label="Ajouter à une playlist">${SVG.add}</button><button class="ib rplay" aria-label="Lire">${cur && E.playing ? PAUSE_SVG : PLAY_SVG}</button></div>`;
@@ -1462,7 +1499,7 @@ function renderCollection() {
     const btns = editOrder
       ? `<button class="ib rup" aria-label="Monter">${SVG.up}</button><button class="ib rdown" aria-label="Descendre">${SVG.down}</button><button class="ib rdel" aria-label="Retirer">${SVG.del}</button>`
       : `<button class="ib radd" aria-label="Ajouter à une playlist">${SVG.add}</button><button class="ib rplay" aria-label="Lire">${cur && E.playing ? PAUSE_SVG : PLAY_SVG}</button>`;
-    return `<div class="row${cur ? ' cur' : ''}" data-id="${t.id}" data-i="${i}" style="animation-delay:${Math.min(i, 12) * 20}ms">
+    return `<div class="row${cur ? ' cur' : ''}${selIds.has(t.id) ? ' picked' : ''}" data-id="${t.id}" data-i="${i}" style="animation-delay:${Math.min(i, 12) * 20}ms">
       <div class="rc"${artAttr(t)} style="background-image:${coverCSS(t)}"></div>
       <div class="ri"><b>${esc(t.title)}</b><span>${esc(sub)}</span></div>${btns}</div>`;
   }).join('') : `<p class="hint" style="text-align:center;padding:30px 0">${q ? 'Aucun résultat' : isPl ? 'Playlist vide : ajoute des sons avec le bouton ≡+ d\'une liste ou du lecteur.' : 'Aucun son'}</p>`;
@@ -1591,7 +1628,7 @@ async function loadTrack(t, autoplay, startAt = 0) {
   audio.src = url;
   audio.loop = E.repeatOne;
   applyRate();
-  applyGain(t.settings.gainDb);
+  applyGain(autoGain(t));
   if (wantBuffer() && decoded.has(t.id)) { E.kind = 'buffer'; E.buf = E.base = decoded.get(t.id); }
   if (startAt > 0) {                               // bascule de version : même moment musical
     if (E.kind === 'buffer') E.p0 = startAt;
@@ -1601,7 +1638,7 @@ async function loadTrack(t, autoplay, startAt = 0) {
   syncEngine();
   applyLoop();
   renderPlayer(); refreshCardIcons(); updateMini(); updateMediaSession();
-  predecodeVersions();
+  predecodeVersions(); prepFile(t);
   currentFile = null;
   blobGet('audio:' + t.id).then(b => {
     if (b && current && current.id === t.id) currentFile = new File([b], t.fileName || (t.title + '.wav'), { type: b.type || 'audio/wav' });
@@ -1703,12 +1740,12 @@ function renderPlayer() {
   $('#resetSpeed').classList.toggle('on', s.rate !== 1);
   $('#revToggle').classList.toggle('on', !!s.reverse && s.mode !== 'tempo');
   $('#bRev').classList.toggle('on', !!s.reverse && s.mode !== 'tempo');
-  $('#resetGain').classList.toggle('on', s.gainDb !== 0);
+  $('#resetGain').classList.toggle('on', !!s.gainManual);
   const g = $('#rGain'); g.value = s.gainDb; paintRange(g, 0);
   $('#vGain').textContent = fmtNum(s.gainDb) + ' dB';
   document.querySelectorAll('.quick [data-g]').forEach(b => b.classList.toggle('accent', +b.dataset.g === s.gainDb));
   const pk = t.peakDb;
-  $('#gainHint').textContent = `Crête du fichier : ${fmtNum(pk)} dBFS.` + (s.gainDb > 0 ? ' Limiteur actif : pas de saturation.' : ' Au-dessus de 0 dB, un limiteur évite la saturation.');
+  $('#gainHint').textContent = `Crête du fichier : ${fmtNum(pk)} dBFS.` + (!s.gainManual && prefs.autoNorm ? ` Normalisé automatiquement (${fmtNum(s.gainDb)} dB).` : s.gainManual ? ' Réglage manuel.' : '') + (s.gainDb > 0 ? ' Limiteur actif : pas de saturation.' : '');
   // Répétition / boucle
   $('#bRepeat').classList.toggle('on', repeatMode !== 'off');
   $('#rep1').setAttribute('visibility', repeatMode === 'one' ? 'visible' : 'hidden');
@@ -1730,7 +1767,7 @@ function renderChips() {
     out.push(`<span class="chip${s.rate !== 1 ? ' hot' : ''}">${esc(txt)}</span>`);
   }
   if (s.rate !== 1) out.push(`<span class="chip hot">${s.mode === 'vari' ? 'Varispeed' : 'Tempo'}</span>`);
-  if (s.gainDb !== 0) out.push(`<span class="chip hot">${fmtNum(s.gainDb)} dB</span>`);
+  if (s.gainManual && s.gainDb !== 0) out.push(`<span class="chip hot">${fmtNum(s.gainDb)} dB</span>`);
   if (s.reverse && s.mode !== 'tempo') out.push('<span class="chip hot">◀ Reverse</span>');
   if (loopInfo && t.loop && t.loop.on) out.push(`<span class="chip hot">∞ ${loopInfo.bars} mes.</span>`);
   $('#pChips').innerHTML = out.join('');
@@ -1773,13 +1810,14 @@ $('#modeSeg').addEventListener('click', e => {
 
 /* ---------- Réglages : volume ---------- */
 function setGain(dbv) {
+  current.settings.gainManual = true;
   current.settings.gainDb = clamp(Math.round(dbv * 2) / 2, -24, 12);
   applyGain(current.settings.gainDb); renderPlayer(); saveSoon();
 }
 $('#rGain').addEventListener('input', e => setGain(+e.target.value));
-$('#resetGain').onclick = () => { setGain(0); toast('Volume remis à 0 dB'); };
+$('#resetGain').onclick = () => { current.settings.gainManual = false; applyGain(autoGain(current)); renderPlayer(); saveSoon(); toast(prefs.autoNorm ? `Volume normalisé : ${fmtNum(current.settings.gainDb)} dB` : 'Volume remis à 0 dB'); };
 document.querySelectorAll('.quick [data-g]').forEach(b => b.onclick = () => setGain(+b.dataset.g));
-$('#bNorm').onclick = () => { setGain(-0.3 - current.peakDb); toast(`Normalisé : ${fmtNum(current.settings.gainDb)} dB`); };
+$('#bNorm').onclick = () => { setGain(normGain(current)); toast(`Normalisé : ${fmtNum(current.settings.gainDb)} dB`); };
 
 document.querySelectorAll('.tab[data-tab]').forEach(tb => tb.onclick = () => {
   document.querySelectorAll('.tab[data-tab]').forEach(x => x.classList.toggle('on', x === tb));
@@ -1994,7 +2032,7 @@ function setBpm(v, enableLoop = true) {
 }
 $('#loopToggle').onclick = () => {
   if (!bpmOf(current)) { toast('Indique d\'abord le BPM'); $('#bpmInput').focus(); return; }
-  loopSet({ on: !(current.loop && current.loop.on) });
+  loopSet({ on: !(current.loop && current.loop.on), userSet: true });
   toast(current.loop.on ? 'Loop ∞ activée' : 'Loop désactivée');
 };
 $('#bpmInput').addEventListener('change', e => setBpm(e.target.value));
@@ -2037,12 +2075,6 @@ $('#downZero').onclick = () => loopSet({ downbeat: 0, manualDown: true, manualBa
 $('#downAuto').onclick = () => { loopSet({ manualDown: false, autoChosen: true, manualBars: false }); toast('Downbeat détecté automatiquement'); };
 $('#tailSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) loopSet({ wrap: b.dataset.wrap === '1' }); });
 
-$('#bShare').onclick = () => {
-  if (!currentFile) return toast('Fichier en préparation, réessaie');
-  if (navigator.canShare && navigator.canShare({ files: [currentFile] })) {
-    navigator.share({ files: [currentFile], title: current.title }).catch(() => {});
-  } else toast('Partage non disponible sur cet appareil');
-};
 
 /* ---------- Forme d'onde : défilante, zoomable, scratchable ----------
    - La tête de lecture reste au centre, la forme d'onde défile dessous.
@@ -2394,6 +2426,133 @@ async function deleteTrack(t) {
   queue = queue.filter(id => id !== t.id);
   for (const p of playlists) { const i = p.trackIds.indexOf(t.id); if (i >= 0) { p.trackIds.splice(i, 1); await plPut(p); } }
 }
+
+
+/* ---------- Paramètres ---------- */
+const PREF_DEFAULT = { autoNorm: true, loopDefault: true, downDefault: 'start' };
+let prefs = { ...PREF_DEFAULT };
+try { prefs = { ...PREF_DEFAULT, ...JSON.parse(localStorage.getItem('platine.prefs') || '{}') }; } catch (e) {}
+function savePrefs() { try { localStorage.setItem('platine.prefs', JSON.stringify(prefs)); } catch (e) {} }
+const normGain = t => (t && isFinite(t.peakDb)) ? clamp(Math.round((-0.3 - t.peakDb) * 2) / 2, -24, 12) : 0;
+/* Gain effectif : réglage manuel s'il existe, sinon normalisation auto (si activée) */
+function autoGain(t) { const s = t.settings; if (!s.gainManual) s.gainDb = prefs.autoNorm ? normGain(t) : 0; return s.gainDb; }
+function renderSettings() {
+  $('#stNorm').classList.toggle('on', prefs.autoNorm);
+  $('#stLoop').classList.toggle('on', prefs.loopDefault);
+  document.querySelectorAll('#stDown button').forEach(b => b.classList.toggle('on', b.dataset.d === prefs.downDefault));
+  $('#stVersion').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · ${BUILD.date}`;
+  const n = tracks.length, dur = tracks.reduce((s, t) => s + (t.duration || 0), 0);
+  $('#stLib').textContent = `${n} son${n > 1 ? 's' : ''} · ${projectNames().length} projet${projectNames().length > 1 ? 's' : ''} · ${playlists.length} playlist${playlists.length > 1 ? 's' : ''} · ${Math.round(dur / 60)} min de musique`;
+  $('#stStore').textContent = 'Calcul…';
+  if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(e => {
+    const go = v => (v / 1e9).toFixed(2).replace('.', ',') + ' Go';
+    $('#stStore').textContent = `${go(e.usage || 0)} utilisés sur ${go(e.quota || 0)} disponibles pour l'app`;
+  }).catch(() => { $('#stStore').textContent = '—'; });
+  else $('#stStore').textContent = '—';
+}
+$('#btnSettings').onclick = () => { renderSettings(); $('#settings').classList.remove('hidden'); };
+$('#stClose').onclick = () => $('#settings').classList.add('hidden');
+$('#settings').addEventListener('click', e => { if (e.target.id === 'settings') $('#settings').classList.add('hidden'); });
+$('#stNorm').onclick = () => {
+  prefs.autoNorm = !prefs.autoNorm; savePrefs(); renderSettings();
+  if (current && !current.settings.gainManual) { applyGain(autoGain(current)); renderPlayer(); }
+  toast(prefs.autoNorm ? 'Normalisation automatique activée' : 'Normalisation automatique désactivée');
+};
+$('#stLoop').onclick = () => { prefs.loopDefault = !prefs.loopDefault; savePrefs(); renderSettings(); };
+$('#stDown').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; prefs.downDefault = b.dataset.d; savePrefs(); renderSettings(); });
+$('#stUpdate').onclick = () => forceUpdate();
+
+/* ---------- Partage (WhatsApp, AirDrop…) ----------
+   Les fichiers sont préparés à l'avance : iOS n'autorise le partage
+   qu'immédiatement après un toucher.                                   */
+const shareFiles = new Map();
+function prepFile(t) {
+  if (shareFiles.has(t.id)) return Promise.resolve(shareFiles.get(t.id));
+  return blobGet('audio:' + t.id).then(b => {
+    if (!b) return null;
+    const f = new File([b], t.fileName || (t.title + '.wav'), { type: b.type || 'audio/wav' });
+    shareFiles.set(t.id, f); return f;
+  });
+}
+function shareNow(files, title) {
+  files = files.filter(Boolean);
+  if (!files.length) return toast('Fichiers en préparation, réessaie');
+  if (navigator.canShare && navigator.canShare({ files })) {
+    return navigator.share({ files, title }).then(() => true).catch(() => false);
+  }
+  toast('Partage de fichiers non disponible sur cet appareil'); return Promise.resolve(false);
+}
+$('#pShare').onclick = () => {
+  if (!current) return;
+  const f = shareFiles.get(current.id) || currentFile;
+  if (!f) { prepFile(current); return toast('Fichier en préparation, réessaie'); }
+  shareNow([f], current.title);
+};
+
+/* Sélection multiple : appui long sur un son, puis toucher les autres */
+let selOn = false;
+const selIds = new Set();
+function setSelect(on, firstId) {
+  selOn = on; selIds.clear();
+  if (on && firstId) toggleSel(firstId, true);
+  document.body.classList.toggle('selecting', on);
+  renderSelBar(); renderAll();
+}
+function toggleSel(id, force) {
+  const on = force ?? !selIds.has(id);
+  if (on) { selIds.add(id); const t = byId(id); if (t) prepFile(t); } else selIds.delete(id);
+  document.querySelectorAll(`.row[data-id="${id}"]`).forEach(r => r.classList.toggle('picked', on));
+  renderSelBar();
+}
+function renderSelBar() {
+  $('#selBar').classList.toggle('hidden', !selOn);
+  const n = selIds.size;
+  $('#selCount').textContent = n ? `${n} son${n > 1 ? 's' : ''}` : 'Touche des sons';
+  $('#selShare').disabled = !n;
+  $('#selShare').textContent = n > 1 ? `Partager (${n})` : 'Partager';
+}
+$('#selCancel').onclick = () => setSelect(false);
+$('#selAll').onclick = () => {
+  const ids = [...document.querySelectorAll('#cList .row, #grid .row')].filter(r => r.offsetParent).map(r => r.dataset.id);
+  const all = ids.every(id => selIds.has(id));
+  ids.forEach(id => toggleSel(id, !all));
+};
+$('#selShare').onclick = async () => {
+  const ts = [...selIds].map(byId).filter(Boolean);
+  const files = ts.map(t => shareFiles.get(t.id));
+  if (files.some(f => !f)) { ts.forEach(prepFile); return toast('Préparation des fichiers… réessaie dans une seconde'); }
+  const ok = await shareNow(files, ts.length === 1 ? ts[0].title : `${ts.length} sons`);
+  if (ok) setSelect(false);
+};
+// appui long sur une ligne → mode sélection
+(() => {
+  let timer = null, sx = 0, sy = 0, fired = false;
+  const start = e => {
+    fired = false;                                   // le clic de l'appui long précédent ne compte plus
+    const row = e.target.closest('.row'); if (!row || selOn || editOrder) return;
+    sx = e.clientX; sy = e.clientY; fired = false;
+    clearTimeout(timer);
+    timer = setTimeout(() => { fired = true; if (navigator.vibrate) navigator.vibrate(10); setSelect(true, row.dataset.id); }, 480);
+  };
+  const move = e => { if (timer && (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8)) { clearTimeout(timer); timer = null; } };
+  const end = () => { clearTimeout(timer); timer = null; };
+  ['#cList', '#grid'].forEach(sel => {
+    const el = $(sel);
+    el.addEventListener('pointerdown', start); el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    el.addEventListener('click', e => { if (fired) { e.stopImmediatePropagation(); e.preventDefault(); fired = false; } }, true);
+    el.addEventListener('contextmenu', e => { if (e.target.closest('.row')) e.preventDefault(); });
+  });
+})();
+// en mode sélection, un toucher coche / décoche au lieu de lire
+['#cList', '#grid'].forEach(sel => $(sel).addEventListener('click', e => {
+  if (!selOn) return;
+  const row = e.target.closest('.row'); if (!row) return;
+  e.stopImmediatePropagation(); e.preventDefault();
+  toggleSel(row.dataset.id);
+}, true));
+$('#cSelect').onclick = () => setSelect(true);
+$('#allSelect').onclick = () => setSelect(true);
 
 /* ---------- Divers ---------- */
 let toastTimer;

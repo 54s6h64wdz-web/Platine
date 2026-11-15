@@ -5,6 +5,8 @@ Tes sons restent **sur ton téléphone** : rien n'est envoyé en ligne.
 
 ## Fonctions (v2)
 
+- **Partage** : bouton Partager en haut du lecteur, et sélection multiple (appui long sur un son, ou « Choisir ») pour envoyer plusieurs fichiers d'un coup par WhatsApp, AirDrop…
+- **Paramètres** (roue crantée) : normalisation automatique du volume (activée par défaut), loop par défaut, downbeat par défaut, espace utilisé, mise à jour.
 - **Versions** : les sons dont le nom commence pareil (ex. « Nolah_… ») sont reconnus comme versions d'une même prod. Pastilles « Versions » dans le lecteur : la bascule garde le même moment musical (même mesure), même si la version est plus courte. Une version sans BPM dans son nom prend celui des autres (affiché « ≈ »).
 - **Forme d'onde défilante** : tête de lecture au centre, zoom (pincer ou − / +), vue d'ensemble en dessous, glisser pour se déplacer.
 - **Easter egg du disque** : doigt posé = tape stop ; glisse et lâche = le disque est lancé dans ce sens (×2 max), puis l'inertie le ramène à ×1 (ou à l'arrêt en pause).
