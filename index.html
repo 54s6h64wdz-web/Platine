@@ -101,7 +101,11 @@ svg{display:block}
 .playing .arm{transform:rotate(15deg)}
 .arm svg{width:100%;height:100%}
 
-.wave{position:relative;height:72px;touch-action:none;cursor:pointer}
+.wave-wrap{position:relative}
+.wave{position:relative;height:96px;touch-action:none;cursor:grab;-webkit-user-select:none}
+.zoom{position:absolute;right:0;top:-34px;display:flex;gap:6px}
+.zoom button{width:30px;height:26px;border-radius:8px;background:var(--surface2);color:var(--muted);font-family:var(--mono);font-size:16px;line-height:1}
+.ov{display:block;width:100%;height:26px;margin-top:10px;border-radius:6px;background:var(--surface);touch-action:none}
 .wave canvas{width:100%;height:100%}
 .times{display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;color:var(--muted);margin-top:8px}
 .times b{color:var(--text);font-weight:500}
@@ -319,7 +323,11 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
       </div>
     </div>
 
-    <div class="wave" id="waveBox"><canvas id="wave"></canvas></div>
+    <div class="wave-wrap">
+      <div class="wave" id="waveBox"><canvas id="wave"></canvas></div>
+      <div class="zoom"><button id="zOut" aria-label="Dézoomer">−</button><button id="zIn" aria-label="Zoomer">+</button></div>
+    </div>
+    <canvas class="ov" id="ov"></canvas>
     <div class="times"><b id="tCur">0:00</b><span id="tDur">0:00</span></div>
     <p class="wave-hint hidden" id="waveHint"></p>
 
@@ -452,7 +460,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 11, version: '2.6.3', date: '15/11/2026' };
+const BUILD = { n: 12, version: '2.7', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -572,6 +580,7 @@ function ctx() {
   limiter.attack.value = 0.002; limiter.release.value = 0.12;
   route(false);
   try { actx.createMediaElementSource(audio).connect(gainNode); } catch (e) { console.warn(e); }
+  setTimeout(() => S.init(), 0);
   return actx;
 }
 function route(limit) {
@@ -609,7 +618,7 @@ async function decodeTrack(t) {
 const E = {
   kind: 'element',        // 'buffer' (Web Audio) ou 'element' (lecteur natif)
   playing: false, rate: 1, buf: null, src: null, p0: 0, t0: 0, token: 0,
-  loopA: null, loopB: null, repeatOne: false, loopInf: null, base: null, loopBuf: null,
+  loopA: null, loopB: null, repeatOne: false, loopInf: null, base: null, loopBuf: null, scratching: false,
   onstate() {}, onended() {},
   duration() { return this.buf ? this.buf.duration : (audio.duration || (current && current.duration) || 0); },
   loopRange() {
@@ -619,6 +628,7 @@ const E = {
     return null;
   },
   time() {
+    if (this.scratching) return S.time();
     if (this.kind === 'element') return audio.currentTime || 0;
     if (!this.playing) return this.p0;
     let p = this.p0 + (actx.currentTime - this.t0) * this.rate;
@@ -649,6 +659,7 @@ const E = {
   play() {
     ctx(); if (actx.state !== 'running') actx.resume().catch(() => {});
     keepAlive.play().catch(() => {});
+    if (this.scratching) { this.playing = true; S.setTarget(this.rate); this.onstate(); return; }
     if (this.kind === 'buffer') {
       if (!this.playing) { this.playing = true; this.startBuffer(this.p0 >= this.buf.duration - 0.02 ? 0 : this.p0); }
     } else {
@@ -658,11 +669,13 @@ const E = {
     this.onstate();
   },
   pause() {
+    if (this.scratching) { this.playing = false; S.setTarget(0); keepAlive.pause(); this.onstate(); return; }
     if (this.kind === 'buffer') { if (this.playing) { this.p0 = this.time(); this.stopSource(); } }
     else audio.pause();
     this.playing = false; keepAlive.pause(); this.onstate();
   },
   seek(t) {
+    if (this.scratching) { const was = this.playing; S.abort(); this.p0 = t; if (this.kind === 'buffer' && was) { this.startBuffer(clamp(t, 0, this.duration())); return; } }
     t = clamp(t, 0, this.duration());
     if (this.kind === 'buffer') { if (this.playing) this.startBuffer(t); else this.p0 = t; }
     else audio.currentTime = t;
@@ -672,6 +685,7 @@ const E = {
     if (this.kind === 'buffer' && this.playing) { this.p0 = this.time(); this.t0 = actx.currentTime; }
     this.rate = r;
     if (this.src) this.src.playbackRate.setValueAtTime(r, actx.currentTime);
+    if (this.scratching && this.playing) S.setTarget(r);
   },
   refreshLoop() { if (this.kind === 'buffer' && this.playing) this.startBuffer(this.time()); audio.loop = this.repeatOne; },
   toBuffer(buf) {
@@ -688,16 +702,18 @@ const E = {
     audio.currentTime = pos;
     if (was) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
   },
-  reset() { this.stopSource(); audio.pause(); this.playing = false; this.p0 = 0; this.buf = this.base = this.loopBuf = null; this.loopInf = null; this.kind = 'element'; },
+  reset() { S.abort(); S.loadedFor = null; this.scratching = false; this.stopSource(); audio.pause(); this.playing = false; this.p0 = 0; this.buf = this.base = this.loopBuf = null; this.loopInf = null; this.kind = 'element'; },
   /* Loop ∞ : on remplace le son par sa version « bouclable » (même début, queue recollée) */
   inLoop(pos) { const L = this.loopInf; return L && pos >= L.end ? L.start + ((pos - L.start) % (L.end - L.start)) : pos; },
   setLoopInf(lb) {
+    S.abort();
     const pos = this.time();
     this.loopBuf = lb.buffer; this.loopInf = { start: lb.start, end: lb.end };
     if (this.kind === 'buffer') { this.buf = lb.buffer; if (this.playing) this.startBuffer(this.inLoop(pos)); else this.p0 = this.inLoop(this.p0); }
   },
   clearLoopInf() {
     if (!this.loopInf && !this.loopBuf) return;
+    S.abort();
     const pos = this.time();
     this.loopBuf = null; this.loopInf = null;
     if (this.kind === 'buffer' && this.base) { this.buf = this.base; if (this.playing) this.startBuffer(pos); }
@@ -705,8 +721,67 @@ const E = {
 };
 // Le lecteur natif peut être mis en pause par iOS (appel, autre app…)
 audio.addEventListener('play',  () => { if (E.kind === 'element' && !E.playing) { E.playing = true; E.onstate(); } });
-audio.addEventListener('pause', () => { if (E.kind === 'element' && E.playing && !audio.ended) { E.playing = false; E.onstate(); } });
+audio.addEventListener('pause', () => { if (E.kind === 'element' && E.playing && !audio.ended && !E.scratching) { E.playing = false; E.onstate(); } });
 audio.addEventListener('ended', () => { if (E.kind === 'element') { E.playing = false; E.onstate(); E.onended(); } });
+
+
+/* ---------- Scratch : pilote du moteur AudioWorklet ---------- */
+const S = {
+  node: null, ready: false, loadedFor: null, pos: 0, rate: 0, t: 0, active: false, dragging: false,
+  async init() {
+    if (this.node || this.initing || !actx || !actx.audioWorklet) return;
+    this.initing = true;
+    try {
+      await actx.audioWorklet.addModule('scratch-worklet.js');
+      this.node = new AudioWorkletNode(actx, 'scratch', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+      this.node.connect(gainNode);
+      this.node.port.onmessage = e => this.msg(e.data);
+      this.ready = true;
+    } catch (e) { console.warn('Scratch indisponible', e); }
+  },
+  bufFor() { return E.kind === 'buffer' ? E.buf : (current && decoded.get(current.id)) || null; },
+  prep() {                                   // envoie le son au moteur de scratch (une fois par son)
+    const b = this.bufFor();
+    if (!this.ready || !b || this.loadedFor === b || this.active) return;
+    const chs = [];
+    for (let c = 0; c < Math.min(2, b.numberOfChannels); c++) chs.push(b.getChannelData(c).slice());
+    this.node.port.postMessage({ type: 'load', channels: chs, sampleRate: b.sampleRate }, chs.map(a => a.buffer));
+    this.loadedFor = b;
+  },
+  can() { return this.ready && !!this.loadedFor && this.loadedFor === this.bufFor(); },
+  time() { const d = (current && current.duration) || 1e9; return clamp(this.pos + (actx.currentTime - this.t) * this.rate, 0, d); },
+  begin(pos) {
+    this.active = true; this.dragging = true; this.pos = pos; this.rate = 0; this.t = actx.currentTime;
+    if (E.kind === 'buffer') { if (E.playing) E.stopSource(); } else audio.pause();
+    E.scratching = true;
+    if (actx.state !== 'running') actx.resume().catch(() => {});
+    this.node.port.postMessage({ type: 'start', pos, loop: E.loopRange() });
+  },
+  drag(pos) { this.node.port.postMessage({ type: 'drag', pos }); },
+  release() { this.dragging = false; this.node.port.postMessage({ type: 'release', targetRate: E.playing ? E.rate : 0, loop: E.loopRange() }); },
+  setTarget(r) { if (this.active && !this.dragging) this.node.port.postMessage({ type: 'target', targetRate: r }); },
+  finish(pos, rate, time) {                  // le plateau a retrouvé sa vitesse : on rend la main au lecteur normal
+    if (!this.active) return;
+    this.active = false; E.scratching = false;
+    const at = pos + Math.max(0, actx.currentTime - time) * rate;
+    if (E.kind === 'buffer') { if (E.playing && rate > 0.001) E.startBuffer(E.inLoop(at)); else E.p0 = clamp(pos, 0, E.duration()); }
+    else { audio.currentTime = E.playing ? at : pos; if (E.playing) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); } }
+    this.node.port.postMessage({ type: 'stop' });
+  },
+  abort() {
+    if (!this.active) return;
+    this.active = false; this.dragging = false; E.scratching = false;
+    if (this.node) this.node.port.postMessage({ type: 'stop' });
+  },
+  msg(d) {
+    if (d.type === 'pos') { if (this.active) { this.pos = d.pos; this.rate = d.rate; this.t = d.time; } }
+    else if (d.type === 'settled') this.finish(d.pos, d.rate, d.time);
+    else if (d.type === 'end' && this.active) {
+      this.active = false; E.scratching = false; this.node.port.postMessage({ type: 'stop' });
+      E.p0 = 0; E.playing = false; E.onstate(); E.onended();
+    }
+  }
+};
 
 const wantBuffer = () => current && current.settings.mode !== 'tempo';
 /* Choisit le bon moteur selon le mode (Varispeed → Web Audio, Tempo → natif) */
@@ -1257,7 +1332,7 @@ async function loadTrack(t, autoplay) {
     if (!b) return toast('Fichier introuvable');
     url = URL.createObjectURL(b); audioURLs.set(t.id, url);
   }
-  E.reset(); loopInfo = null; if (typeof setSel === 'function') setSel(null);
+  E.reset(); loopInfo = null; viewSpan = spanTarget = null; if (typeof setSel === 'function') setSel(null);
   E.rate = t.settings.rate;
   E.loopA = t.loopA ?? null; E.loopB = t.loopB ?? null;
   E.repeatOne = repeatMode === 'one';
@@ -1494,7 +1569,11 @@ function tapBar(t) {
 $('#bLoop').onclick = () => {
   const t = current, now = E.time();
   if (selMode) { setSel(null); t.loopA = t.loopB = null; E.loopA = E.loopB = null; E.refreshLoop(); renderPlayer(); return; }
-  if (t.loopA == null && barGrid()) { setSel('A'); return; }      // sélection par mesures
+  if (t.loopA == null && barGrid()) {                             // sélection par mesures
+    setSel('A');
+    const G = barGrid(); spanTarget = clampSpan(Math.min((current.duration || 10) * 1.05, G.bar * 16)); if (!viewSpan) viewSpan = spanNow();
+    return;
+  }
   if (t.loopA == null) { t.loopA = now; toast('Point A posé — appuie encore pour B'); }
   else if (t.loopB == null) {
     if (now <= t.loopA + 0.2) { t.loopB = t.loopA; t.loopA = Math.max(0, now); if (t.loopB - t.loopA < 0.2) { t.loopA = t.loopB = null; } }
@@ -1598,75 +1677,209 @@ $('#bShare').onclick = () => {
   } else toast('Partage non disponible sur cet appareil');
 };
 
-/* ---------- Forme d'onde ---------- */
-const cv = $('#wave'), g2 = cv.getContext('2d');
+/* ---------- Forme d'onde : défilante, zoomable, scratchable ----------
+   - La tête de lecture reste au centre, la forme d'onde défile dessous.
+   - Pincer (2 doigts) ou boutons − / + : zoom.
+   - Glisser : scratch en temps réel (avant / arrière), avec inertie au lâcher.
+   - Toucher sans glisser : saut à cet endroit (ou choix de mesure en mode A·B).
+   - Bande du bas : vue d'ensemble du morceau, toucher/glisser pour s'y déplacer. */
+const cv = $('#wave'), g2 = cv.getContext('2d'), ov = $('#ov'), g3 = ov.getContext('2d');
 let dpr = 1, seeking = false, seekT = 0;
 const ACCENT = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6b35';
+let viewSpan = null, spanTarget = null;          // secondes visibles (null = automatique)
+let dragView = null;                              // temps affiché au centre pendant un glissement
+const fine = new Map();                           // forme d'onde détaillée (100 points / s) par son
+function finePeaks(buf) {
+  const hop = Math.round(buf.sampleRate / 100), n = Math.ceil(buf.length / hop), out = new Float32Array(n);
+  for (let c = 0; c < Math.min(2, buf.numberOfChannels); c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < n; i++) {
+      let m = out[i]; const a = i * hop, b = Math.min(d.length, a + hop);
+      for (let j = a; j < b; j += 2) { const x = d[j] < 0 ? -d[j] : d[j]; if (x > m) m = x; }
+      out[i] = m;
+    }
+  }
+  let mx = 0; for (const v of out) if (v > mx) mx = v;
+  if (mx > 0) for (let i = 0; i < n; i++) out[i] /= mx;
+  return { pps: buf.sampleRate / hop, data: out };
+}
+function defaultSpan() {
+  const d = (current && current.duration) || 10, b = bpmOf(current);
+  return Math.min(d * 1.05, b ? 240 / b * 4 : 10);
+}
+const spanNow = () => viewSpan || defaultSpan();
+function clampSpan(s) { return clamp(s, 1, Math.max(4, ((current && current.duration) || 10) * 1.1)); }
+function zoomBy(f) { spanTarget = clampSpan((spanTarget || spanNow()) * f); if (!viewSpan) viewSpan = spanNow(); }
+$('#zIn').onclick = () => zoomBy(0.5);
+$('#zOut').onclick = () => zoomBy(2);
 function sizeWave() {
   dpr = window.devicePixelRatio || 1;
   cv.width = Math.round(cv.clientWidth * dpr); cv.height = Math.round(cv.clientHeight * dpr);
+  ov.width = Math.round(ov.clientWidth * dpr); ov.height = Math.round(ov.clientHeight * dpr);
   drawWave();
 }
 window.addEventListener('resize', () => playerOpen && sizeWave());
+function peakAt(t0, t1, F, peaks, dur) {
+  let m = 0;
+  if (F && (t1 - t0) < dur / peaks.length * 2) {
+    const a = Math.max(0, Math.floor(t0 * F.pps)), b = Math.min(F.data.length, Math.max(a + 1, Math.ceil(t1 * F.pps)));
+    for (let j = a; j < b; j++) if (F.data[j] > m) m = F.data[j];
+  } else {
+    const a = Math.max(0, Math.floor(t0 / dur * peaks.length)), b = Math.min(peaks.length, Math.max(a + 1, Math.ceil(t1 / dur * peaks.length)));
+    for (let j = a; j < b; j++) if (peaks[j] > m) m = peaks[j];
+  }
+  return m;
+}
 function drawWave() {
   const w = cv.width, h = cv.height;
   g2.clearRect(0, 0, w, h);
   if (!current || !w) return;
-  const peaks = current.peaks || [], dur = current.duration || E.duration() || 1;
-  const t = seeking ? seekT : E.time(), px = t / dur * w;
+  const peaks = current.peaks || [], dur = current.duration || E.duration() || 1, span = spanNow();
+  const ct = dragView != null ? dragView : (seeking ? seekT : E.time());
+  const X = t => w / 2 + (t - ct) / span * w;
+  const F = fine.get(current.id);
+  // boucles
   if (current.loopA != null) {
-    const a = current.loopA / dur * w, b = current.loopB != null ? current.loopB / dur * w : a + 2 * dpr;
+    const a = X(current.loopA), b = current.loopB != null ? X(current.loopB) : a + 2 * dpr;
     g2.fillStyle = 'rgba(255,107,53,.14)'; g2.fillRect(a, 0, b - a, h);
     g2.fillStyle = ACCENT; g2.fillRect(a, 0, 1.5 * dpr, h); if (current.loopB != null) g2.fillRect(b - 1.5 * dpr, 0, 1.5 * dpr, h);
   }
   const LI = current.loopB == null && current.loop && current.loop.on ? loopInfo : null;
-  if (LI) {
-    const a = LI.start / dur * w, b = LI.end / dur * w;
-    g2.fillStyle = ACCENT; g2.fillRect(a, 0, 1.5 * dpr, h); g2.fillRect(Math.min(w, b) - 1.5 * dpr, 0, 1.5 * dpr, h);
-  }
-  const bw = 2 * dpr, gap = 1.6 * dpr, n = Math.floor(w / (bw + gap));
-  for (let i = 0; i < n; i++) {
-    const p0 = Math.floor(i / n * peaks.length), p1 = Math.max(p0 + 1, Math.floor((i + 1) / n * peaks.length));
-    let m = 0; for (let j = p0; j < p1; j++) if (peaks[j] > m) m = peaks[j];
-    const bh = Math.max(2 * dpr, m * h * 0.94), x = i * (bw + gap);
-    const outLoop = LI && (x < LI.start / dur * w - 1 || x > LI.end / dur * w);
-    g2.fillStyle = outLoop ? 'rgba(255,255,255,.09)' : x + bw <= px ? ACCENT : 'rgba(255,255,255,.26)';
+  if (LI) { g2.fillStyle = ACCENT; g2.fillRect(X(LI.start), 0, 1.5 * dpr, h); g2.fillRect(X(LI.end) - 1.5 * dpr, 0, 1.5 * dpr, h); }
+  // barres
+  const bw = 2 * dpr, gap = 1.4 * dpr, step = bw + gap, n = Math.ceil(w / step) + 1;
+  const tPerPx = span / w, phase = ((ct / tPerPx) % step + step) % step;   // les barres glissent avec le son
+  for (let i = -1; i < n; i++) {
+    const x = i * step - phase + (w / 2) % step;
+    const t0 = ct + (x - w / 2) * tPerPx, t1 = t0 + step * tPerPx;
+    if (t1 < 0 || t0 > dur) continue;
+    const m = peakAt(Math.max(0, t0), Math.min(dur, t1), F, peaks, dur);
+    const bh = Math.max(2 * dpr, m * h * 0.94);
+    const outLoop = LI && (t1 < LI.start || t0 > LI.end);
+    g2.fillStyle = outLoop ? 'rgba(255,255,255,.09)' : x + bw <= w / 2 ? ACCENT : 'rgba(255,255,255,.28)';
     g2.fillRect(x, (h - bh) / 2, bw, bh);
   }
+  // mesures
   const G = barGrid();
-  if (G) {                                                   // lignes des mesures
-    const pxBar = G.bar / dur * w; let k = 1; while (pxBar * k < 6 * dpr) k *= 2;
-    for (let i = 0, tt = G.start; tt < dur; i++, tt = G.start + i * G.bar) {
+  if (G) {
+    const pxBar = G.bar / span * w; let k = 1; while (pxBar * k < 6 * dpr) k *= 2;
+    const first = Math.max(0, Math.floor((ct - span / 2 - G.start) / G.bar)), lastI = Math.ceil((ct + span / 2 - G.start) / G.bar);
+    for (let i = first; i <= lastI; i++) {
       if (i % k) continue;
-      const x = tt / dur * w, strong = i % (4 * k) === 0;
-      g2.fillStyle = selMode ? (strong ? 'rgba(255,107,53,.75)' : 'rgba(255,107,53,.4)') : (strong ? 'rgba(255,255,255,.32)' : 'rgba(255,255,255,.13)');
+      const tt = G.start + i * G.bar; if (tt > dur) break;
+      const x = X(tt), strong = i % (4 * k) === 0;
+      g2.fillStyle = selMode ? (strong ? 'rgba(255,107,53,.8)' : 'rgba(255,107,53,.45)') : (strong ? 'rgba(255,255,255,.34)' : 'rgba(255,255,255,.14)');
       g2.fillRect(x, 0, Math.max(1, dpr * (strong ? 1 : 0.75)), h);
+      if (strong && pxBar * k > 26 * dpr) { g2.fillStyle = 'rgba(255,255,255,.4)'; g2.font = `${9 * dpr}px ui-monospace,monospace`; g2.fillText(String(i + 1), x + 3 * dpr, 10 * dpr); }
     }
   }
-  g2.fillStyle = '#fff'; g2.fillRect(Math.min(w - 2 * dpr, Math.max(0, px - dpr)), 0, 2 * dpr, h);
+  // début / fin du morceau
+  g2.fillStyle = 'rgba(255,255,255,.18)'; g2.fillRect(X(0), 0, dpr, h); g2.fillRect(X(dur), 0, dpr, h);
+  // tête de lecture fixe au centre
+  g2.fillStyle = '#fff'; g2.fillRect(w / 2 - dpr, 0, 2 * dpr, h);
+  drawOverview(ct, span, dur, LI);
 }
+function drawOverview(ct, span, dur, LI) {
+  const w = ov.width, h = ov.height; if (!w) return;
+  g3.clearRect(0, 0, w, h);
+  const peaks = current.peaks || [], n = Math.floor(w / (2 * dpr));
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor(i / n * peaks.length), b = Math.max(a + 1, Math.floor((i + 1) / n * peaks.length));
+    let m = 0; for (let j = a; j < b; j++) if (peaks[j] > m) m = peaks[j];
+    const bh = Math.max(dpr, m * h * 0.8), x = i * 2 * dpr;
+    g3.fillStyle = x / w <= ct / dur ? 'rgba(255,107,53,.75)' : 'rgba(255,255,255,.25)';
+    g3.fillRect(x, (h - bh) / 2, dpr, bh);
+  }
+  const a = (ct - span / 2) / dur * w, b = (ct + span / 2) / dur * w;
+  g3.fillStyle = 'rgba(255,255,255,.08)'; g3.fillRect(a, 0, b - a, h);
+  g3.strokeStyle = 'rgba(255,255,255,.35)'; g3.lineWidth = dpr; g3.strokeRect(a + dpr / 2, dpr / 2, b - a - dpr, h - dpr);
+  const L = E.loopRange();
+  if (L) { g3.fillStyle = ACCENT; g3.fillRect(L[0] / dur * w, 0, dpr, h); g3.fillRect(L[1] / dur * w - dpr, 0, dpr, h); }
+  g3.fillStyle = '#fff'; g3.fillRect(ct / dur * w - dpr / 2, 0, dpr * 1.5, h);
+}
+
+/* Gestes sur la forme d'onde */
 (() => {
-  const box = $('#waveBox');
-  const timeAt = e => { const r = box.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1) * (current.duration || E.duration() || 0); };
-  let downX = 0;
+  const box = $('#waveBox'), pts = new Map();
+  let g = null;   // geste en cours
+  const W = () => box.getBoundingClientRect().width;
+  const timeAtX = x => { const r = box.getBoundingClientRect(); return (dragView != null ? dragView : E.time()) + (x - r.left - r.width / 2) / r.width * spanNow(); };
   box.addEventListener('pointerdown', e => {
     if (!current) return;
-    if (selMode) { downX = e.clientX; return; }
-    seeking = true; seekT = timeAt(e); box.setPointerCapture(e.pointerId);
+    box.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {                                   // pincement : zoom
+      if (g && g.type === 'scratch') endScratch(g);
+      const [p, q] = [...pts.values()];
+      g = { type: 'pinch', d0: Math.hypot(p.x - q.x, p.y - q.y) || 1, s0: spanNow() };
+      if (!viewSpan) viewSpan = spanNow();
+      return;
+    }
+    if (pts.size === 1) g = { type: 'pending', x0: e.clientX, t0: E.time(), id: e.pointerId };
   });
-  box.addEventListener('pointermove', e => { if (seeking) seekT = timeAt(e); });
-  box.addEventListener('pointerup', e => { if (selMode && Math.abs(e.clientX - downX) < 12) tapBar(timeAt(e)); });
-  const end = () => { if (!seeking) return; seeking = false; E.seek(seekT); updatePosition(); };
-  box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
+  box.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!g) return;
+    if (g.type === 'pinch' && pts.size >= 2) {
+      const [p, q] = [...pts.values()];
+      viewSpan = spanTarget = clampSpan(g.s0 * g.d0 / (Math.hypot(p.x - q.x, p.y - q.y) || 1));
+      return;
+    }
+    if (g.id !== e.pointerId) return;
+    const dx = e.clientX - g.x0;
+    if (g.type === 'pending' && Math.abs(dx) > 6) {
+      g.type = S.can() ? 'scratch' : 'drag';
+      g.t0 = E.time();
+      if (g.type === 'scratch') S.begin(g.t0);
+    }
+    if (g.type === 'scratch' || g.type === 'drag') {
+      const t = clamp(g.t0 - dx / W() * spanNow(), 0, current.duration || E.duration());
+      dragView = t;
+      if (g.type === 'scratch') S.drag(t);
+    }
+  });
+  function endScratch(gg) {
+    if (gg.type === 'scratch') S.release();
+    else if (gg.type === 'drag' && dragView != null) E.seek(dragView);
+    dragView = null;
+  }
+  const up = e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if (!g) return;
+    if (g.type === 'pinch') { if (pts.size === 0) g = null; return; }
+    if (g.id !== e.pointerId) return;
+    if (g.type === 'pending') {                             // simple toucher
+      const t = clamp(timeAtX(e.clientX), 0, current.duration || E.duration());
+      if (selMode) tapBar(t); else { E.seek(t); updatePosition(); }
+    } else endScratch(g);
+    g = null;
+  };
+  box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+
+  // vue d'ensemble : se déplacer dans le morceau
+  let ovDrag = false, lastSeek = 0;
+  const ovTime = e => { const r = ov.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1) * (current.duration || E.duration()); };
+  ov.addEventListener('pointerdown', e => { if (!current) return; ov.setPointerCapture(e.pointerId); ovDrag = true; seeking = true; seekT = ovTime(e); });
+  ov.addEventListener('pointermove', e => { if (!ovDrag) return; seekT = ovTime(e); const now = performance.now(); if (now - lastSeek > 80) { lastSeek = now; } });
+  const ovUp = () => { if (!ovDrag) return; ovDrag = false; seeking = false; E.seek(seekT); updatePosition(); };
+  ov.addEventListener('pointerup', ovUp); ov.addEventListener('pointercancel', ovUp);
 })();
 
 /* ---------- Animation : disque + temps ---------- */
 let angle = 0, vel = 0, last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  const target = !E.playing || !current ? 0 : 360 / TURN_SECONDS * E.rate;
-  vel += (target - vel) * Math.min(1, dt * (target > vel ? 3.2 : 2.2));   // démarrage / freinage doux
-  if (Math.abs(vel) < 0.05) vel = 0;
+  if (spanTarget != null && viewSpan != null && Math.abs(spanTarget - viewSpan) > 0.001) viewSpan += (spanTarget - viewSpan) * Math.min(1, dt * 12);   // zoom animé
+  if (current && playerOpen) {
+    S.prep();
+    if (!fine.has(current.id) && decoded.has(current.id)) fine.set(current.id, finePeaks(decoded.get(current.id)));
+  }
+  const target = !current ? 0 : E.scratching ? 360 / TURN_SECONDS * S.rate : !E.playing ? 0 : 360 / TURN_SECONDS * E.rate;
+  if (E.scratching) vel = target;                                           // le disque suit la main
+  else vel += (target - vel) * Math.min(1, dt * (target > vel ? 3.2 : 2.2));   // démarrage / freinage doux
+  if (Math.abs(vel) < 0.05 && !E.scratching) vel = 0;
   angle = (angle + vel * dt) % 360;
   if (playerOpen) {
     $('#disc').style.transform = `rotate(${angle}deg)`;

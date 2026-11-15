@@ -5,6 +5,7 @@ Tes sons restent **sur ton téléphone** : rien n'est envoyé en ligne.
 
 ## Fonctions (v2)
 
+- **Forme d'onde défilante + scratch** : tête de lecture au centre, zoom (pincer ou − / +), vue d'ensemble en dessous. Glisse la forme d'onde pour scratcher en temps réel (avant/arrière) : au lâcher, le plateau garde son élan puis revient à la vitesse de lecture comme une platine (ou freine jusqu'à l'arrêt si la lecture est en pause).
 - **Détection du tempo** (onglet Loop) avec ÷2 / ×2, **lignes de mesures** sur la forme d'onde et **A·B par mesures** : touche A (lecture immédiate au début de la mesure), puis B (lecture 3 s avant la fin, qui enchaîne sur A pour vérifier la jonction). Bouton « Tester la jonction ».
 - **Varispeed en temps réel** (Web Audio) : la vitesse change pendant la lecture sans coupure, boutons Réinitialiser
 - **Loop ∞ calée sur le BPM** (onglet Loop) : BPM lu dans le nom (`139bp`, `140bpm`, `141BPM`…) ou Tap tempo, downbeat détecté automatiquement (ou « Poser ici »), mesures calculées sans la queue de reverb, queue recollée au début ou coupée. Activée par défaut quand le fichier a un BPM.
