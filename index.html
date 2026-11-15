@@ -194,6 +194,13 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 .round.spin svg{animation:spin 1s linear infinite}
 .sync-info{font-family:var(--mono);font-size:12px;color:var(--muted);margin:-6px 0 18px}
 .lib-seg{margin-bottom:20px}
+.waitbar{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 10px 12px 14px;margin:-6px 0 18px}
+.waitbar b{display:block;font-size:14px}
+.waitbar span{display:block;font-size:12px;color:var(--muted);margin-top:2px;line-height:1.35}
+.wb-spin{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite;flex:none}
+.log{max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:6px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.45}
+.log-row{padding:4px 0;border-bottom:1px solid #222;color:var(--text)}
+.log-row span{color:var(--muted);margin-right:6px}
 .src-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
 .src-i{flex:1;min-width:0}
 .src-i b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -273,6 +280,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
     </div>
   </header>
   <p class="sync-info" id="syncInfo"></p>
+  <div id="waitBar" class="waitbar hidden"><div class="wb-spin"></div><div style="flex:1;min-width:0"><b id="waitText">Sélecteur ouvert</b><span id="waitHint"></span></div><button class="pill ghost" id="waitCancel">Arrêter</button></div>
   <div class="seg lib-seg" id="libSeg">
     <button data-lib="prods" class="on">Projets</button>
     <button data-lib="folders">Dossiers</button>
@@ -533,6 +541,8 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
     <label style="margin:18px 0 6px">Bibliothèque</label>
     <p class="hint" id="stLib" style="margin-top:0"></p>
     <p class="hint" id="stStore"></p>
+    <label style="margin:18px 0 6px">Journal de synchro</label>
+    <div id="stLog" class="log"></div>
     <label style="margin:18px 0 6px">Application</label>
     <p class="hint" id="stVersion" style="margin-top:0"></p>
     <div class="quick" style="margin-top:6px"><button id="stUpdate">Mettre à jour l'app</button><a class="quick-a" href="regle.html">Règle d'écran</a></div>
@@ -554,7 +564,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 22, version: '3.3.1', date: '15/11/2026' };
+const BUILD = { n: 23, version: '3.3.2', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -1163,7 +1173,10 @@ async function importFiles(fileList) {
    Chaque sous-dossier devient un projet. Rien n'est supprimé automatiquement. */
 let syncing = false;
 async function syncFolder(fileList) {
+  stopWait();
   const all = [...fileList];
+  const tot = all.reduce((a, f) => a + (f.size || 0), 0);
+  slog(`Fichiers reçus d'iOS : ${all.length} (${(tot / 1e9).toFixed(2).replace('.', ',')} Go)` + (all[0] ? ` — dossier « ${(all[0].webkitRelativePath || '').split('/')[0] || '?'} »` : ''));
   if (!all.length) return toast("Aucun fichier reçu : choisis un dossier puis touche « Ouvrir »", 5000);
   const files = all.filter(f => AUDIO_EXT.test(f.name) && !f.name.startsWith('.') && !/(^|\/)\./.test(f.webkitRelativePath || ''));
   toast(`${all.length} fichier${all.length > 1 ? 's' : ''} reçu${all.length > 1 ? 's' : ''} · ${files.length} son${files.length > 1 ? 's' : ''}`, 2500);
@@ -1202,6 +1215,7 @@ async function syncFolder(fileList) {
   const knownRoots = new Set([...Object.keys(loadSources()), ...absorbed]);
   // Gros import : on prévient avant de copier des Go sur l'iPhone
   const newBytes = plan.filter(x => !x.ex || !x.ex.same).reduce((a, x) => a + (x.f.size || 0), 0);
+  slog(`Analyse : ${files.length} sons, ${todo} à importer (${(newBytes / 1e9).toFixed(2).replace('.', ',')} Go)`);
   if (newBytes > 2e9 && !confirm(`${todo} son${todo > 1 ? 's' : ''} à importer, soit ${(newBytes / 1e9).toFixed(1).replace('.', ',')} Go copiés dans l'app sur ton iPhone.\n\nContinuer ?`)) {
     try { wake && wake.release(); } catch (e) {}
     syncing = false; $('#btnSync').classList.remove('spin'); renderAll();
@@ -1237,6 +1251,7 @@ async function syncFolder(fileList) {
   if (missing) msg.push(`${missing} absent${missing > 1 ? 's' : ''} du dossier`);
   const label = prefix ? `« ${root} » (dans « ${srcRoot} »)` : `« ${root} »`;
   toast(msg.length ? `${label} : ` + msg.join(' · ') : `${label} : tout est à jour ✓`, 4000);
+  slog(`Fin de synchro ${label} : ` + (msg.length ? msg.join(' · ') : 'tout est à jour') + (failed ? ` — dernière erreur : ${lastErr}` : ''));
   if (failed) { await sleep(3600); toast('Dernière erreur — ' + lastErr, 8000); }
 }
 
@@ -2551,6 +2566,7 @@ function renderSettings() {
   $('#stNorm').classList.toggle('on', prefs.autoNorm);
   $('#stLoop').classList.toggle('on', prefs.loopDefault);
   document.querySelectorAll('#stDown button').forEach(b => b.classList.toggle('on', b.dataset.d === prefs.downDefault));
+  renderSyncLog();
   $('#stVersion').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · ${BUILD.date}`;
   const TL = { prods: ['Projets', 'tes prods, versions regroupées'], folders: ['Dossiers', 'tes dossiers synchronisés'], all: ['Tous', 'tous les sons, recherche et tri'], playlists: ['Playlists', 'manuelles et intelligentes'] };
   $('#stTabs').innerHTML = TAB_IDS.map(k => `<div class="ctl row"><span>${TL[k][0]} <small style="opacity:.6">· ${TL[k][1]}</small></span><button class="switch${prefs.tabs[k] !== false ? ' on' : ''}" data-tab="${k}"><i></i></button></div>`).join('');
@@ -2703,6 +2719,7 @@ function pickFolder(root) {
   if (syncing) return toast('Synchro en cours…');
   expectRoot = root || null;
   toast(root ? `Choisis le dossier « ${root} » puis touche « Ouvrir »` : 'Va dans le dossier à ajouter, puis touche « Ouvrir »', 6000);
+  slog(root ? `Sélecteur ouvert (synchro de « ${root} »)` : 'Sélecteur ouvert (nouveau dossier)'); startWait();
   $('#folderInput').click();
 }
 $('#srcClose').onclick = () => $('#sources').classList.add('hidden');
@@ -2725,6 +2742,38 @@ $('#srcList').addEventListener('click', async e => {
   renderSources(); renderAll(); toast(`« ${root} » retiré (${list.length} sons)`);
 });
 
+
+/* ---------- Journal de synchro + attente d'iOS ---------- */
+function slog(msg) {
+  let L = [];
+  try { L = JSON.parse(localStorage.getItem('platine.synclog') || '[]'); } catch (e) {}
+  L.push({ t: Date.now(), msg }); while (L.length > 40) L.shift();
+  try { localStorage.setItem('platine.synclog', JSON.stringify(L)); } catch (e) {}
+}
+function renderSyncLog() {
+  let L = []; try { L = JSON.parse(localStorage.getItem('platine.synclog') || '[]'); } catch (e) {}
+  const hm = t => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const d = t => new Date(t).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+  $('#stLog').innerHTML = L.length ? L.slice().reverse().map(e => `<div class="log-row"><span>${d(e.t)} ${hm(e.t)}</span>${esc(e.msg)}</div>`).join('') : '<p class="hint">Aucune synchro pour l\'instant.</p>';
+}
+let waitT0 = 0, waitTimer = null, waitBack = false;
+function startWait() {
+  waitT0 = Date.now(); waitBack = false;
+  $('#waitBar').classList.remove('hidden');
+  clearInterval(waitTimer);
+  waitTimer = setInterval(() => {
+    const s = Math.round((Date.now() - waitT0) / 1000), m = Math.floor(s / 60);
+    $('#waitText').textContent = (waitBack ? 'iOS prépare le dossier' : 'Sélecteur ouvert') + ` · ${m}:${String(s % 60).padStart(2, '0')}`;
+    $('#waitHint').textContent = waitBack ? (s > 20 ? 'Gros dossier : iOS télécharge et copie tous les fichiers avant de les donner à l\'app. Garde l\'app ouverte.' : '') : 'Choisis le dossier puis touche « Ouvrir ».';
+  }, 1000);
+}
+function stopWait() { clearInterval(waitTimer); waitTimer = null; $('#waitBar').classList.add('hidden'); }
+$('#waitCancel').onclick = () => { slog('Attente arrêtée par toi (aucun fichier reçu)'); stopWait(); };
+// retour du sélecteur sans fichiers tout de suite = iOS prépare (ou annulation)
+window.addEventListener('focus', () => { if (waitTimer && !waitBack) { waitBack = true; slog('Retour du sélecteur — en attente des fichiers d\'iOS'); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && waitTimer && !waitBack && Date.now() - waitT0 > 800) { waitBack = true; slog('Retour du sélecteur — en attente des fichiers d\'iOS'); } });
+$('#folderInput').addEventListener('cancel', () => { slog('Sélecteur annulé'); stopWait(); });
+
 /* ---------- Divers ---------- */
 let toastTimer;
 function toast(msg, ms = 2200) {
@@ -2734,12 +2783,8 @@ function toast(msg, ms = 2200) {
 $('#btnAdd').onclick = $('#btnAdd2').onclick = () => $('#fileInput').click();
 $('#fileInput').onchange = e => { const f = e.target.files; importFiles(f).finally(() => { e.target.value = ''; }); };
 $('#btnSync').onclick = () => { if (!sourceList().length) return pickFolder(null); renderSources(); $('#sources').classList.remove('hidden'); };
-$('#btnSync2').onclick = () => {
-  if (syncing) return toast('Synchro en cours…');
-  toast('Va dans ton dossier (ex : LOOPS), puis touche « Ouvrir ». Un gros dossier iCloud peut mettre quelques minutes à arriver.', 6000);
-  $('#folderInput').click();
-};
-$('#folderInput').onchange = e => { const f = e.target.files; syncFolder(f).catch(err => { console.error(err); toast('Erreur pendant la synchro'); syncing = false; $('#btnSync').classList.remove('spin'); }).finally(() => { e.target.value = ''; }); };
+$('#btnSync2').onclick = () => pickFolder(null);
+$('#folderInput').onchange = e => { const f = e.target.files; syncFolder(f).catch(err => { console.error(err); const m = (err && (err.message || err.name)) || String(err); slog('Erreur pendant la synchro : ' + m); toast('Erreur pendant la synchro : ' + m, 6000); stopWait(); syncing = false; $('#btnSync').classList.remove('spin'); }).finally(() => { e.target.value = ''; }); };
 document.addEventListener('keydown', e => { if (e.code === 'Space' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); togglePlay(); } });
 
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
