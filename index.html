@@ -165,8 +165,11 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 
 /* ---------- v2 : synchro, projets, playlists ---------- */
 .lib-actions{display:flex;gap:10px}
+.brand{display:flex;flex-direction:column;line-height:1}
+.brand small{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.06em;margin-top:6px}
+.build{text-align:center;font-family:var(--mono);font-size:11px;color:#55555b;margin-top:36px;letter-spacing:.04em}
 .round.spin svg{animation:spin 1s linear infinite}
-.sync-info{font-family:var(--mono);font-size:12px;color:var(--muted);margin:-14px 0 18px}
+.sync-info{font-family:var(--mono);font-size:12px;color:var(--muted);margin:-6px 0 18px}
 .lib-seg{margin-bottom:20px}
 .card .cover.new{background:transparent;border:2px dashed var(--line);display:grid;place-items:center;color:var(--muted);box-shadow:none}
 #collection{position:absolute;inset:0;z-index:4;background:var(--bg);transform:translateX(100%);transition:transform .45s var(--ease);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(var(--sat) + 10px) 20px calc(var(--sab) + 110px)}
@@ -207,7 +210,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <!-- ===== Bibliothèque ===== -->
 <section id="library">
   <header class="lib-head">
-    <h1>Platine<span>.</span></h1>
+    <div class="brand"><h1>Platine<span>.</span></h1><small>by gnetik</small></div>
     <div class="lib-actions">
       <button class="round" id="btnSync" aria-label="Synchroniser un dossier">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/></svg>
@@ -227,6 +230,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
     <button id="installClose" aria-label="Fermer">×</button>
   </div>
   <div id="grid" class="grid"></div>
+  <p class="build" id="buildInfo"></p>
   <div id="empty" class="empty hidden">
     <div class="mini-disc"></div>
     <h2>Aucun son pour l'instant</h2>
@@ -408,6 +412,8 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 
 <script>
 'use strict';
+/* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
+const BUILD = { n: 3, version: '2.1', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -1307,6 +1313,8 @@ const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platfor
 const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 if (isIOS && !standalone && !localStorage.getItem('platine.tip')) $('#installTip').classList.remove('hidden');
 $('#installClose').onclick = () => { localStorage.setItem('platine.tip', '1'); $('#installTip').classList.add('hidden'); };
+
+$('#buildInfo').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · ${BUILD.date}`;
 
 /* ---------- Démarrage ---------- */
 (async function init() {
