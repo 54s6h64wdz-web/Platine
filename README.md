@@ -3,7 +3,11 @@
 Lecteur audio perso pour beatmakers, en web app installable (PWA) sur iPhone.
 Tes sons restent **sur ton téléphone** : rien n'est envoyé en ligne.
 
-## Fonctions (v1)
+## Fonctions (v2)
+
+- **Synchro d'un dossier** (bouton ⟳) : choisis ton dossier LOOPS dans iCloud Drive. Seuls les nouveaux sons et ceux qui ont changé sont importés, et chaque sous-dossier devient un projet. Tu peux aussi choisir un seul sous-dossier (une semaine) : il n'y aura pas de doublons. Les fichiers MIDI sont ignorés.
+- **Projets** classés du plus récent au plus ancien, en vue liste, avec une recherche par nom, BPM ou tonalité
+- **Playlists** : bouton ≡+ sur un son (dans une liste ou dans le lecteur), ordre modifiable, lecture enchaînée dans l'ordre de la playlist
 
 - Bibliothèque de sons avec pochettes (ou dégradés générés automatiquement)
 - Lecteur avec disque vinyle qui tourne (démarrage et freinage doux) et bras de platine
@@ -33,7 +37,7 @@ Tes sons restent **sur ton téléphone** : rien n'est envoyé en ligne.
 
 ## Mettre à jour l'app
 
-Remplace les fichiers sur GitHub. Dans `sw.js`, change aussi `platine-v1` en `platine-v2` (puis v3, etc.).
+Remplace les fichiers sur GitHub (au minimum `index.html` et `sw.js`). Dans `sw.js`, augmente le numéro de version à chaque mise à jour : `platine-v2`, puis `platine-v3`, etc.
 Ferme l'app et rouvre-la pour voir la nouvelle version. Tes sons ne sont pas touchés.
 
 ## À savoir
