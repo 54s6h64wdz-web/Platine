@@ -447,7 +447,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 6, version: '2.4', date: '15/11/2026' };
+const BUILD = { n: 7, version: '2.5', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -726,7 +726,7 @@ function syncEngine() {
    4. Queue de reverb : recollée par-dessus le début de la boucle (comme dans
       un logiciel de production) ou coupée avec un fondu très court.
    ========================================================= */
-const LOOP_DEFAULT = { on: false, downbeat: null, manualDown: false, bars: null, manualBars: false, wrap: true };
+const LOOP_DEFAULT = { on: false, downbeat: 0, manualDown: true, autoChosen: false, bars: null, manualBars: false, wrap: true };   // downbeat au tout début par défaut
 const bpmOf = t => { const b = parseFloat(String(t && t.bpm || '').replace(',', '.')); return b >= 40 && b <= 250 ? b : 0; };
 
 function envelope(buf, hop = 256) {
@@ -1424,6 +1424,7 @@ function renderLoopUI() {
   $('#vBars').textContent = loopInfo ? loopInfo.bars : '–';
   $('#vDown').textContent = (L.downbeat || 0).toFixed(3) + ' s';
   $('#downAuto').classList.toggle('on', !L.manualDown);
+  $('#downZero').classList.toggle('accent', L.manualDown && !(L.downbeat > 0.0005));
   document.querySelectorAll('#tailSeg button').forEach(b => b.classList.toggle('on', (b.dataset.wrap === '1') === !!L.wrap));
   let hint;
   if (!bpm) hint = 'Indique le BPM (ou tape le tempo avec Tap) pour activer la loop.';
@@ -1478,7 +1479,7 @@ document.querySelectorAll('#tabLoop [data-nudge]').forEach(b => b.onclick = () =
   loopSet({ downbeat: Math.max(0, (L.downbeat || 0) + +b.dataset.nudge), manualDown: true });
 });
 $('#downZero').onclick = () => loopSet({ downbeat: 0, manualDown: true, manualBars: false });
-$('#downAuto').onclick = () => { loopSet({ manualDown: false, manualBars: false }); toast('Downbeat et mesures en automatique'); };
+$('#downAuto').onclick = () => { loopSet({ manualDown: false, autoChosen: true, manualBars: false }); toast('Downbeat détecté automatiquement'); };
 $('#tailSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) loopSet({ wrap: b.dataset.wrap === '1' }); });
 
 $('#bShare').onclick = () => {
@@ -1684,6 +1685,7 @@ $('#buildInfo').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · 
       t.project = t.project || IMPORTS;
       if (!t.bpm) t.bpm = guessMeta(t.fileName || t.title).bpm;
       if (!t.loop) t.loop = { ...LOOP_DEFAULT, on: !!t.bpm };
+      else if (!t.loop.manualDown && !t.loop.autoChosen) { t.loop.downbeat = 0; t.loop.manualDown = true; t.loop.manualBars = false; dbPut(t); }
       if (t.hasCover) { const b = await blobGet('cover:' + t.id); if (b) coverURLs.set(t.id, URL.createObjectURL(b)); }
     }
     playlists = await plAll();
