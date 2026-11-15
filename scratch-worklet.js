@@ -2,8 +2,9 @@
    Platine — moteur de scratch (AudioWorklet)
    Lit le son échantillon par échantillon à une vitesse variable,
    y compris en marche arrière.
-   - drag  : la tête de lecture suit le doigt (lissé sur 25 ms) :
-             vitesse et sens viennent du mouvement de la main.
+   - hold  : doigt posé sur le disque → tape stop (freinage jusqu'à l'arrêt).
+   - follow: le disque tourne sous le doigt → le son suit, plafonné à ×2
+             (en avant comme en arrière), avec l'inertie du plateau.
    - spin  : doigt relâché : le plateau garde son élan puis revient
              doucement à la vitesse de lecture (moteur de platine)
              ou s'arrête (si la lecture était en pause).
@@ -23,10 +24,14 @@ class ScratchProcessor extends AudioWorkletProcessor {
     switch (d.type) {
       case 'load': this.ch = d.channels; this.len = d.channels[0].length; this.bsr = d.sampleRate; break;
       case 'start':
-        this.pos = d.pos * this.bsr; this.target = this.pos; this.v = 0;
-        this.mode = 'drag'; this.gTarget = 1; this.stopping = false; this.loop = d.loop; this.ended = false;
+        this.pos = d.pos * this.bsr; this.target = this.pos; this.v = (d.rate || 0) * k;
+        this.vmax = (d.vmax || 2) * k; this.brake = k / (0.28 * sampleRate);   // tape stop : ×1 → 0 en 0,28 s
+        this.mode = 'hold'; this.gTarget = 1; this.stopping = false; this.loop = d.loop; this.ended = false;
         break;
-      case 'drag': this.target = d.pos * this.bsr; break;
+      case 'drag':                                   // d.delta : rotation du disque depuis le toucher (en secondes de son)
+        if (this.mode === 'hold') { this.anchor = this.pos - d.delta * this.bsr; this.mode = 'follow'; }
+        if (this.mode === 'follow') this.target = this.anchor + d.delta * this.bsr;
+        break;
       case 'release': this.mode = 'spin'; this.tv = d.targetRate * k; this.loop = d.loop; this.settled = false; break;
       case 'target': this.tv = d.targetRate * k; this.settled = false; break;
       case 'stop': this.gTarget = 0; this.stopping = true; break;
@@ -36,23 +41,37 @@ class ScratchProcessor extends AudioWorkletProcessor {
     const out = outputs[0], n = out[0].length;
     if (!this.ch || (this.mode === 'idle' && this.g < 1e-4)) { for (const o of out) o.fill(0); return true; }
     const sr = sampleRate, bsr = this.bsr;
-    const kDrag = 1 - Math.exp(-1 / (sr * 0.025));
+    const kSlew = 1 - Math.exp(-1 / (sr * 0.08)), follow = 1 / (sr * 0.07), vmax = this.vmax || 2 * bsr / sr;
     const speedingUp = Math.abs(this.tv) > Math.abs(this.v);
-    const kSpin = 1 - Math.exp(-1 / (sr * (speedingUp ? 0.32 : (this.tv === 0 ? 0.35 : 0.3))));
+    const kSpin = 1 - Math.exp(-1 / (sr * (speedingUp ? 0.42 : 0.35)));     // inertie du plateau au lâcher
     const kG = 1 - Math.exp(-1 / (sr * 0.004));
     const kFric = Math.exp(-1 / (sr * 0.3)), brake = 2.5 * (bsr / sr) / sr;   // perd 2,5× la vitesse normale par seconde
     const a = 0.995, L = this.loop, nc = this.ch.length, last = this.len - 2;
     for (let i = 0; i < n; i++) {
-      if (this.mode === 'drag') { const np = this.pos + (this.target - this.pos) * kDrag; this.v = np - this.pos; this.pos = np; }
+      if (this.mode === 'hold') {                     // tape stop
+        this.v = Math.abs(this.v) <= this.brake ? 0 : this.v - this.brake * Math.sign(this.v);
+        this.pos += this.v;
+      } else if (this.mode === 'follow') {            // le son suit le disque, plafonné à ×2
+        let vd = (this.target - this.pos) * follow;
+        vd = vd > vmax ? vmax : vd < -vmax ? -vmax : vd;
+        this.v += (vd - this.v) * kSlew;
+        this.pos += this.v;
+      }
       else if (this.mode === 'spin') {
         if (this.tv === 0) {                          // frein (lecture en pause) : friction + freinage constant, arrêt net
           this.v *= kFric; const dv = brake * Math.sign(this.v);
           this.v = Math.abs(this.v) <= Math.abs(dv) ? 0 : this.v - dv;
         } else this.v += (this.tv - this.v) * kSpin;  // moteur : retour en douceur à la vitesse de lecture
+        if (this.v > vmax) this.v = vmax; else if (this.v < -vmax) this.v = -vmax;
         this.pos += this.v;
       }
       if (L && this.v > 0 && this.pos >= L[1] * bsr) this.pos -= (L[1] - L[0]) * bsr;     // boucle active
-      if (this.pos < 0) { this.pos = 0; if (this.mode === 'spin' && this.v < 0) this.v = 0; }
+      else if (L && this.v < 0 && this.pos < L[0] * bsr) this.pos += (L[1] - L[0]) * bsr;  // boucle en reverse
+      if (this.pos < 0) {
+        this.pos = 0;
+        if (this.mode === 'spin' && this.v < 0 && this.tv < 0 && !this.ended) { this.ended = true; this.port.postMessage({ type: 'end' }); }
+        if (this.mode === 'spin' && this.v < 0) this.v = 0;
+      }
       if (this.pos > last) {
         this.pos = last;
         if (this.mode === 'spin' && this.v > 0 && !this.ended) { this.ended = true; this.port.postMessage({ type: 'end' }); }
@@ -70,7 +89,7 @@ class ScratchProcessor extends AudioWorkletProcessor {
     }
     if (this.stopping && this.g < 1e-3) { this.mode = 'idle'; this.stopping = false; this.g = 0; }
     if (this.mode === 'spin' && !this.settled) {
-      const tol = this.tv === 0 ? 1e-9 : 0.006 * Math.abs(this.tv);
+      const tol = this.tv === 0 ? 1e-9 : 0.012 * Math.abs(this.tv);
       if (Math.abs(this.v - this.tv) <= tol) {
         this.settled = true; this.v = this.tv;
         this.port.postMessage({ type: 'settled', pos: this.pos / bsr, rate: this.tv * sr / bsr, time: currentTime });

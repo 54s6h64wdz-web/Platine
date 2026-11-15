@@ -75,7 +75,10 @@ svg{display:block}
 
 /* ---------- Lecteur plein écran ---------- */
 #player{position:absolute;inset:0;background:var(--bg);z-index:10;transform:translateY(100%);transition:transform .5s var(--ease);display:flex;flex-direction:column;will-change:transform}
-#player.open{transform:none}
+#player.open{transform:none;visibility:visible;transition:transform .5s var(--ease),visibility 0s}
+#player:not(.open){visibility:hidden;transition:transform .5s var(--ease),visibility 0s .5s}
+#collection:not(.open){visibility:hidden;transition:transform .45s var(--ease),visibility 0s .45s}
+#collection.open{visibility:visible;transition:transform .45s var(--ease),visibility 0s}
 .p-top{display:flex;align-items:center;justify-content:space-between;padding:calc(var(--sat) + 8px) 16px 4px;flex:none}
 .pill{padding:10px 18px;border-radius:999px;background:var(--surface2);font-weight:600;font-size:15px}
 .pill.accent{background:var(--accent);color:#1a0b04}
@@ -191,6 +194,10 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 .round.spin svg{animation:spin 1s linear infinite}
 .sync-info{font-family:var(--mono);font-size:12px;color:var(--muted);margin:-6px 0 18px}
 .lib-seg{margin-bottom:20px}
+.grid.is-list{display:block}
+.sm-folders{max-height:240px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:0 10px}
+.card .tag{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:6px;background:var(--accent-soft);color:var(--accent);margin-right:6px;vertical-align:1px}
+.disc-wrap{touch-action:none;cursor:grab}
 .card .cover.new{background:transparent;border:2px dashed var(--line);display:grid;place-items:center;color:var(--muted);box-shadow:none}
 #collection{position:absolute;inset:0;z-index:4;background:var(--bg);transform:translateX(100%);transition:transform .45s var(--ease);overflow-x:hidden;overflow-y:auto;touch-action:pan-y;overscroll-behavior-x:none;-webkit-overflow-scrolling:touch;padding:calc(var(--sat) + 10px) 20px calc(var(--sab) + 110px)}
 #collection.open{transform:none}
@@ -243,11 +250,16 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
   <p class="sync-info" id="syncInfo"></p>
   <div class="seg lib-seg" id="libSeg">
     <button data-lib="projects" class="on">Projets</button>
+    <button data-lib="all">Tous les sons</button>
     <button data-lib="playlists">Playlists</button>
   </div>
   <div id="installTip" class="install hidden">
     <div>Pour l'installer comme une app : bouton <b>Partager</b> puis <b>Sur l'écran d'accueil</b>. Importe tes sons <b>après</b> l'installation (Safari et l'app ne partagent pas leur stockage).</div>
     <button id="installClose" aria-label="Fermer">×</button>
+  </div>
+  <div id="allTools" class="hidden">
+    <div class="c-tools"><input type="search" class="search" id="allSearch" placeholder="Rechercher un son, un dossier, un BPM…" autocomplete="off"></div>
+    <div class="seg" id="allSort" style="margin:8px 0 6px"><button data-sort="recent" class="on">Récents</button><button data-sort="name">A → Z</button><button data-sort="bpm">BPM</button></div>
   </div>
   <div id="grid" class="grid"></div>
   <p class="build"><span id="buildInfo"></span> · <button class="upd" id="btnUpdate">Mettre à jour</button> · <a class="upd" href="regle.html">Règle</a></p>
@@ -377,6 +389,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
           <span>Tonalité</span>
           <div class="stepper"><button id="stDown">−1 st</button><b id="vSt">0 st</b><button id="stUp">+1 st</button></div>
         </div>
+        <div class="ctl row"><span>Reverse</span><button class="switch" id="revToggle" aria-label="Lecture à l'envers"><i></i></button></div>
       </div>
 
       <div id="tabGain" class="hidden">
@@ -455,12 +468,25 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
   </div>
 </div>
 
+<!-- ===== Playlist intelligente ===== -->
+<div id="smartSheet" class="modal hidden">
+  <div class="modal-card">
+    <div class="m-head"><button class="pill ghost" id="smCancel">Annuler</button><b>Playlist intelligente</b><button class="pill accent" id="smSave">OK</button></div>
+    <label>Nom<input id="smName" autocomplete="off" placeholder="ex : Shortlists 140 BPM"></label>
+    <label style="margin-bottom:4px">Dossiers <span style="opacity:.7">(aucun coché = tous)</span></label>
+    <div id="smFolders" class="sm-folders"></div>
+    <div class="two" style="margin-top:14px"><label>BPM min<input id="smBpmMin" inputmode="decimal" autocomplete="off"></label><label>BPM max<input id="smBpmMax" inputmode="decimal" autocomplete="off"></label></div>
+    <div class="two"><label>Nom contient<input id="smText" autocomplete="off" placeholder="ex : GNTK"></label><label>Tonalité contient<input id="smKey" autocomplete="off" placeholder="ex : min"></label></div>
+    <p class="hint" id="smCount"></p>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 12, version: '2.7', date: '15/11/2026' };
+const BUILD = { n: 13, version: '2.8', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -615,10 +641,18 @@ async function decodeTrack(t) {
   return buf;
 }
 
+const revCache = new WeakMap();                  // version retournée des sons (pour le Reverse)
+function reversed(buf) {
+  let r = revCache.get(buf);
+  if (r) return r;
+  r = ctx().createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+  for (let c = 0; c < buf.numberOfChannels; c++) { const a = buf.getChannelData(c), b = r.getChannelData(c), n = a.length; for (let i = 0; i < n; i++) b[i] = a[n - 1 - i]; }
+  revCache.set(buf, r); return r;
+}
 const E = {
   kind: 'element',        // 'buffer' (Web Audio) ou 'element' (lecteur natif)
   playing: false, rate: 1, buf: null, src: null, p0: 0, t0: 0, token: 0,
-  loopA: null, loopB: null, repeatOne: false, loopInf: null, base: null, loopBuf: null, scratching: false,
+  loopA: null, loopB: null, repeatOne: false, loopInf: null, base: null, loopBuf: null, scratching: false, rev: false,
   onstate() {}, onended() {},
   duration() { return this.buf ? this.buf.duration : (audio.duration || (current && current.duration) || 0); },
   loopRange() {
@@ -631,24 +665,39 @@ const E = {
     if (this.scratching) return S.time();
     if (this.kind === 'element') return audio.currentTime || 0;
     if (!this.playing) return this.p0;
-    let p = this.p0 + (actx.currentTime - this.t0) * this.rate;
+    const el = (actx.currentTime - this.t0) * this.rate;
+    let p;
+    if (this.rev) {                                   // reverse : la position recule
+      p = this.p0 - el;
+      const L = this.loopRange();
+      if (L && this.p0 >= L[0] - 0.005 && p < L[0]) p = L[1] - ((L[0] - p) % (L[1] - L[0]));
+      return Math.max(0, p);
+    }
+    p = this.p0 + el;
     const L = this.loopRange();
     if (L && this.p0 <= L[1] + 0.005 && p >= L[1]) p = L[0] + ((p - L[0]) % (L[1] - L[0]));
     return Math.min(p, this.duration());
   },
   startBuffer(at) {
     this.stopSource();
-    const s = actx.createBufferSource();
-    s.buffer = this.buf; s.playbackRate.value = this.rate;
+    const s = actx.createBufferSource(), D = this.buf.duration;
+    s.buffer = this.rev ? reversed(this.buf) : this.buf; s.playbackRate.value = this.rate;
     const L = this.loopRange();
-    if (L) { s.loop = true; s.loopStart = L[0]; s.loopEnd = L[1]; }
+    if (L) { s.loop = true; s.loopStart = this.rev ? D - L[1] : L[0]; s.loopEnd = this.rev ? D - L[0] : L[1]; }
     s.connect(gainNode);
     const tok = ++this.token;
-    s.onended = () => { if (tok === this.token && this.playing) { this.playing = false; this.p0 = 0; this.src = null; this.onstate(); this.onended(); } };
-    at = clamp(at, 0, Math.max(0, this.buf.duration - 0.001));
-    s.start(0, at);
+    s.onended = () => { if (tok === this.token && this.playing) { this.playing = false; this.p0 = this.rev ? D : 0; this.src = null; this.onstate(); this.onended(); } };
+    at = clamp(at, this.rev ? 0.001 : 0, Math.max(0, D - (this.rev ? 0 : 0.001)));
+    s.start(0, this.rev ? D - at : at);
     this.src = s; this.p0 = at; this.t0 = actx.currentTime;
   },
+  setReverse(on) {
+    if (on === this.rev) return;
+    const pos = this.time(); this.rev = on;
+    if (this.kind === 'buffer' && this.playing && !this.scratching) this.startBuffer(pos);
+    else if (this.scratching && this.playing) S.setTarget(this.signedRate());
+  },
+  signedRate() { return this.rev ? -this.rate : this.rate; },
   stopSource() {
     if (!this.src) return;
     this.token++;
@@ -659,9 +708,9 @@ const E = {
   play() {
     ctx(); if (actx.state !== 'running') actx.resume().catch(() => {});
     keepAlive.play().catch(() => {});
-    if (this.scratching) { this.playing = true; S.setTarget(this.rate); this.onstate(); return; }
+    if (this.scratching) { this.playing = true; S.setTarget(this.signedRate()); this.onstate(); return; }
     if (this.kind === 'buffer') {
-      if (!this.playing) { this.playing = true; this.startBuffer(this.p0 >= this.buf.duration - 0.02 ? 0 : this.p0); }
+      if (!this.playing) { this.playing = true; this.startBuffer(this.rev ? (this.p0 <= 0.02 ? this.buf.duration : this.p0) : (this.p0 >= this.buf.duration - 0.02 ? 0 : this.p0)); }
     } else {
       this.playing = true;
       const p = audio.play(); if (p && p.catch) p.catch(err => console.warn(err));
@@ -685,7 +734,7 @@ const E = {
     if (this.kind === 'buffer' && this.playing) { this.p0 = this.time(); this.t0 = actx.currentTime; }
     this.rate = r;
     if (this.src) this.src.playbackRate.setValueAtTime(r, actx.currentTime);
-    if (this.scratching && this.playing) S.setTarget(r);
+    if (this.scratching && this.playing) S.setTarget(this.signedRate());
   },
   refreshLoop() { if (this.kind === 'buffer' && this.playing) this.startBuffer(this.time()); audio.loop = this.repeatOne; },
   toBuffer(buf) {
@@ -750,21 +799,22 @@ const S = {
   },
   can() { return this.ready && !!this.loadedFor && this.loadedFor === this.bufFor(); },
   time() { const d = (current && current.duration) || 1e9; return clamp(this.pos + (actx.currentTime - this.t) * this.rate, 0, d); },
-  begin(pos) {
-    this.active = true; this.dragging = true; this.pos = pos; this.rate = 0; this.t = actx.currentTime;
+  begin(pos) {                               // doigt posé sur le disque
+    const r = E.playing ? E.signedRate() : 0;
+    this.active = true; this.dragging = true; this.pos = pos; this.rate = r; this.t = actx.currentTime;
     if (E.kind === 'buffer') { if (E.playing) E.stopSource(); } else audio.pause();
     E.scratching = true;
     if (actx.state !== 'running') actx.resume().catch(() => {});
-    this.node.port.postMessage({ type: 'start', pos, loop: E.loopRange() });
+    this.node.port.postMessage({ type: 'start', pos, rate: r, vmax: 2, loop: E.loopRange() });
   },
-  drag(pos) { this.node.port.postMessage({ type: 'drag', pos }); },
-  release() { this.dragging = false; this.node.port.postMessage({ type: 'release', targetRate: E.playing ? E.rate : 0, loop: E.loopRange() }); },
+  drag(delta) { this.node.port.postMessage({ type: 'drag', delta }); },
+  release() { this.dragging = false; this.node.port.postMessage({ type: 'release', targetRate: E.playing ? E.signedRate() : 0, loop: E.loopRange() }); },
   setTarget(r) { if (this.active && !this.dragging) this.node.port.postMessage({ type: 'target', targetRate: r }); },
   finish(pos, rate, time) {                  // le plateau a retrouvé sa vitesse : on rend la main au lecteur normal
     if (!this.active) return;
     this.active = false; E.scratching = false;
     const at = pos + Math.max(0, actx.currentTime - time) * rate;
-    if (E.kind === 'buffer') { if (E.playing && rate > 0.001) E.startBuffer(E.inLoop(at)); else E.p0 = clamp(pos, 0, E.duration()); }
+    if (E.kind === 'buffer') { if (E.playing && Math.abs(rate) > 0.001) E.startBuffer(E.rev ? at : E.inLoop(at)); else E.p0 = clamp(pos, 0, E.duration()); }
     else { audio.currentTime = E.playing ? at : pos; if (E.playing) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); } }
     this.node.port.postMessage({ type: 'stop' });
   },
@@ -778,7 +828,7 @@ const S = {
     else if (d.type === 'settled') this.finish(d.pos, d.rate, d.time);
     else if (d.type === 'end' && this.active) {
       this.active = false; E.scratching = false; this.node.port.postMessage({ type: 'stop' });
-      E.p0 = 0; E.playing = false; E.onstate(); E.onended();
+      E.p0 = E.rev ? E.duration() : 0; E.playing = false; E.onstate(); E.onended();
     }
   }
 };
@@ -787,7 +837,8 @@ const wantBuffer = () => current && current.settings.mode !== 'tempo';
 /* Choisit le bon moteur selon le mode (Varispeed → Web Audio, Tempo → natif) */
 function syncEngine() {
   if (!current) return;
-  if (!wantBuffer()) return E.toElement();
+  if (!wantBuffer()) { E.toElement(); E.rev = false; return; }
+  E.rev = !!current.settings.reverse;
   const t = current;
   if (decoded.has(t.id)) { E.toBuffer(decoded.get(t.id)); return; }
   getBuffer(t).then(buf => { if (buf && current && current.id === t.id && wantBuffer()) E.toBuffer(buf); })
@@ -1132,7 +1183,9 @@ function groupCover(list, name) {
 function collectionTracks(v) {
   if (!v) return [];
   if (v.kind === 'project') return sortProject(tracks.filter(t => t.project === v.key));
+  if (v.kind === 'all') return allTracks();
   const p = playlists.find(x => x.id === v.key);
+  if (p && p.smart) return smartTracks(p);
   return p ? p.trackIds.map(byId).filter(Boolean) : [];
 }
 function projectNames() {
@@ -1149,26 +1202,40 @@ function renderLibrary() {
   $('#libSeg').classList.toggle('hidden', noTracks);
   const ls = JSON.parse(localStorage.getItem('platine.lastSync') || 'null');
   $('#syncInfo').textContent = ls ? `Synchro « ${ls.root} » ${ago(ls.at)}` : '';
+  $('#allTools').classList.toggle('hidden', noTracks || libTab !== 'all');
+  $('#grid').classList.toggle('is-list', libTab === 'all');
   if (noTracks) { $('#grid').innerHTML = ''; return; }
+  if (libTab === 'all') { libItems = []; renderAll_(); return; }
   if (libTab === 'projects') {
     libItems = projectNames().map(name => ({ kind: 'project', key: name, name, list: collectionTracks({ kind: 'project', key: name }) }));
   } else {
-    libItems = playlists.slice().sort((a, b) => b.created - a.created).map(p => ({ kind: 'playlist', key: p.id, name: p.name, list: collectionTracks({ kind: 'playlist', key: p.id }) }));
+    libItems = playlists.slice().sort((a, b) => b.created - a.created).map(p => ({ kind: 'playlist', key: p.id, name: p.name, smart: !!p.smart, list: collectionTracks({ kind: 'playlist', key: p.id }) }));
   }
   const cards = libItems.map((it, i) => {
     const playing = sameSrc(queueSrc, it) && E.playing;
     const dur = it.list.reduce((s, t) => s + (t.duration || 0), 0);
     return `<div class="card${sameSrc(queueSrc, it) ? ' is-current' : ''}" data-i="${i}" style="animation-delay:${Math.min(i, 10) * 35}ms">
       <div class="cover" style="background-image:${groupCover(it.list, it.name)}">${it.list.length ? `<button class="cplay" aria-label="Lire">${playing ? PAUSE_SVG : PLAY_SVG}</button>` : ''}</div>
-      <div class="ct"><div><h3>${esc(it.name)}</h3><p>${it.list.length} son${it.list.length > 1 ? 's' : ''}${dur ? ' · ' + fmt(dur) : ''}</p></div></div>
+      <div class="ct"><div><h3>${esc(it.name)}</h3><p>${it.smart ? '<span class="tag">AUTO</span>' : ''}${it.list.length} son${it.list.length > 1 ? 's' : ''}${dur ? ' · ' + fmt(dur) : ''}</p></div></div>
     </div>`;
   });
-  if (libTab === 'playlists') cards.unshift(`<div class="card" data-new="1"><div class="cover new">${SVG.plus}</div><div class="ct"><div><h3>Nouvelle playlist</h3><p>&nbsp;</p></div></div></div>`);
+  if (libTab === 'playlists') cards.unshift(`<div class="card" data-new="1"><div class="cover new">${SVG.plus}</div><div class="ct"><div><h3>Nouvelle playlist</h3><p>&nbsp;</p></div></div></div>`,
+    `<div class="card" data-new="smart"><div class="cover new" style="font-size:30px">⚡</div><div class="ct"><div><h3>Playlist intelligente</h3><p>Dossiers, BPM…</p></div></div></div>`);
   $('#grid').innerHTML = cards.join('');
 }
 $('#libSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; libTab = b.dataset.lib; renderLibrary(); });
 $('#grid').addEventListener('click', e => {
+  const row = e.target.closest('.row');
+  if (row) {                                        // liste « Tous les sons »
+    const t = byId(row.dataset.id); if (!t) return;
+    const src = { kind: 'all', key: 'all' };
+    if (e.target.closest('.radd')) return openPlSheet(t);
+    if (e.target.closest('.rplay')) { if (current && current.id === t.id) togglePlay(); else playFrom(src, t); return; }
+    if (!current || current.id !== t.id) playFrom(src, t);
+    openPlayer(); return;
+  }
   const card = e.target.closest('.card'); if (!card) return;
+  if (card.dataset.new === 'smart') return openSmart(null);
   if (card.dataset.new) return askName('Nouvelle playlist', '', name => createPlaylist(name));
   const it = libItems[+card.dataset.i]; if (!it) return;
   if (e.target.closest('.cplay')) {
@@ -1177,6 +1244,86 @@ $('#grid').addEventListener('click', e => {
   }
   openCollection(it.kind, it.key);
 });
+
+
+/* ---------- Tous les sons ---------- */
+let allSort = 'recent', allQuery = '';
+function allTracks() {
+  const q = allQuery.trim().toLowerCase();
+  let l = tracks.filter(t => !q || [t.title, t.fileName, t.project, t.key, t.artist, t.bpm && t.bpm + ' bpm'].join(' ').toLowerCase().includes(q));
+  if (allSort === 'name') l.sort((a, b) => natural(a.title, b.title));
+  else if (allSort === 'bpm') l.sort((a, b) => (bpmOf(a) || 999) - (bpmOf(b) || 999) || natural(a.title, b.title));
+  else l.sort((a, b) => (b.mtime || b.created) - (a.mtime || a.created));
+  return l;
+}
+function rowHTML(t, i, showProject) {
+  const cur = current && current.id === t.id;
+  const sub = [showProject ? t.project : '', t.bpm ? t.bpm + ' BPM' : '', t.key, fmt(t.duration)].filter(Boolean).join(' · ');
+  return `<div class="row${cur ? ' cur' : ''}" data-id="${t.id}" data-i="${i}" style="animation-delay:${Math.min(i, 12) * 20}ms">
+    <div class="rc" style="background-image:${coverCSS(t)}"></div>
+    <div class="ri"><b>${esc(t.title)}</b><span>${esc(sub)}</span></div>
+    <button class="ib radd" aria-label="Ajouter à une playlist">${SVG.add}</button><button class="ib rplay" aria-label="Lire">${cur && E.playing ? PAUSE_SVG : PLAY_SVG}</button></div>`;
+}
+function renderAll_() {
+  const l = allTracks();
+  $('#grid').innerHTML = l.length ? l.slice(0, 600).map((t, i) => rowHTML(t, i, true)).join('') : '<p class="hint" style="text-align:center;padding:30px 0">Aucun résultat</p>';
+}
+$('#allSearch').addEventListener('input', e => { allQuery = e.target.value; renderAll_(); });
+$('#allSort').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; allSort = b.dataset.sort; document.querySelectorAll('#allSort button').forEach(x => x.classList.toggle('on', x === b)); renderAll_(); });
+
+/* ---------- Playlists intelligentes ----------
+   Elles se remplissent toutes seules selon des règles : dossiers, BPM, texte, tonalité. */
+function smartTracks(p) {
+  const r = p.rules || {}, txt = (r.text || '').toLowerCase(), key = (r.key || '').toLowerCase();
+  return sortProject(tracks.filter(t => {
+    if (r.folders && r.folders.length && !r.folders.includes(t.project)) return false;
+    const b = bpmOf(t);
+    if (r.bpmMin && !(b && b >= r.bpmMin)) return false;
+    if (r.bpmMax && !(b && b <= r.bpmMax)) return false;
+    if (txt && !(t.title + ' ' + (t.fileName || '')).toLowerCase().includes(txt)) return false;
+    if (key && !(t.key || '').toLowerCase().includes(key)) return false;
+    return true;
+  }));
+}
+let smEditing = null, smFolders = new Set();
+function smRules() {
+  const n = v => { const x = parseFloat(String(v).replace(',', '.')); return x > 0 ? x : null; };
+  return { folders: [...smFolders], bpmMin: n($('#smBpmMin').value), bpmMax: n($('#smBpmMax').value), text: $('#smText').value.trim(), key: $('#smKey').value.trim() };
+}
+function smRefresh() {
+  $('#smFolders').innerHTML = projectNames().map(n => `<button class="pl-row${smFolders.has(n) ? ' on' : ''}" data-n="${esc(n)}"><span class="chk">${smFolders.has(n) ? '✓' : ''}</span><b>${esc(n)}</b><span>${tracks.filter(t => t.project === n).length}</span></button>`).join('');
+  const c = smartTracks({ rules: smRules() }).length;
+  $('#smCount').textContent = `${c} son${c > 1 ? 's' : ''} correspondent aux règles${smFolders.size ? '' : ' (tous les dossiers)'}.`;
+}
+function openSmart(p) {
+  smEditing = p || null;
+  const r = (p && p.rules) || {};
+  $('#smName').value = p ? p.name : '';
+  smFolders = new Set(r.folders || []);
+  $('#smBpmMin').value = r.bpmMin || ''; $('#smBpmMax').value = r.bpmMax || '';
+  $('#smText').value = r.text || ''; $('#smKey').value = r.key || '';
+  smRefresh(); $('#smartSheet').classList.remove('hidden');
+}
+$('#smFolders').addEventListener('click', e => {
+  const b = e.target.closest('.pl-row'); if (!b) return;
+  const n = b.dataset.n; smFolders.has(n) ? smFolders.delete(n) : smFolders.add(n); smRefresh();
+});
+['#smBpmMin', '#smBpmMax', '#smText', '#smKey'].forEach(s => $(s).addEventListener('input', () => {
+  const c = smartTracks({ rules: smRules() }).length;
+  $('#smCount').textContent = `${c} son${c > 1 ? 's' : ''} correspondent aux règles${smFolders.size ? '' : ' (tous les dossiers)'}.`;
+}));
+$('#smCancel').onclick = () => $('#smartSheet').classList.add('hidden');
+$('#smSave').onclick = async () => {
+  const rules = smRules();
+  const name = $('#smName').value.trim() || (rules.folders.length === 1 ? rules.folders[0] : 'Playlist intelligente');
+  let p = smEditing;
+  if (p) Object.assign(p, { name, rules });
+  else { p = { id: uid(), name, smart: true, rules, trackIds: [], created: Date.now() }; playlists.push(p); }
+  await plPut(p);
+  $('#smartSheet').classList.add('hidden');
+  renderAll();
+  toast(`« ${name} » : ${smartTracks(p).length} sons`);
+};
 
 /* ---------- Vue d'un projet / d'une playlist ---------- */
 function openCollection(kind, key) {
@@ -1201,10 +1348,11 @@ function renderCollection() {
   const dur = all.reduce((s, t) => s + (t.duration || 0), 0);
   $('#cTitle').textContent = isPl ? pl.name : view.key;
   $('#cCount').textContent = `${all.length} son${all.length > 1 ? 's' : ''} · ${fmt(dur)}`;
-  $('#cEdit').classList.toggle('hidden', !isPl || all.length < 2);
+  $('#cEdit').classList.toggle('hidden', !isPl || all.length < 2 || !!pl.smart);
   $('#cEdit').textContent = editOrder ? 'OK' : 'Ordre';
   $('#cEdit').classList.toggle('accent', editOrder);
   $('#cRename').classList.toggle('hidden', !isPl);
+  $('#cRename').textContent = isPl && pl.smart ? 'Modifier les règles' : 'Renommer la playlist';
   $('#cDelete').textContent = isPl ? 'Supprimer la playlist' : 'Supprimer le projet et ses sons';
   $('#cSearch').parentElement.classList.toggle('hidden', editOrder);
   $('#cList').innerHTML = list.length ? list.map((t, i) => {
@@ -1243,6 +1391,7 @@ $('#cList').addEventListener('click', async e => {
 });
 $('#cRename').onclick = () => {
   const pl = playlists.find(p => p.id === view.key); if (!pl) return;
+  if (pl.smart) return openSmart(pl);
   askName('Renommer la playlist', pl.name, async name => { pl.name = name; await plPut(pl); renderCollection(); });
 };
 $('#cDelete').onclick = async () => {
@@ -1278,7 +1427,8 @@ function openPlSheet(t) {
 }
 function renderPlSheet() {
   const t = plTrack;
-  $('#plList').innerHTML = playlists.length ? playlists.slice().sort((a, b) => b.created - a.created).map(p => {
+  const manual = playlists.filter(p => !p.smart);
+  $('#plList').innerHTML = manual.length ? manual.slice().sort((a, b) => b.created - a.created).map(p => {
     const on = p.trackIds.includes(t.id);
     return `<button class="pl-row${on ? ' on' : ''}" data-id="${p.id}"><span class="chk">${on ? '✓' : ''}</span><b>${esc(p.name)}</b><span>${p.trackIds.length}</span></button>`;
   }).join('') : '<p class="hint">Aucune playlist pour l\'instant : crée la première ci-dessous.</p>';
@@ -1315,7 +1465,7 @@ function refreshCardIcons() {
     c.classList.toggle('is-current', sameSrc(queueSrc, it));
     if (b) b.innerHTML = sameSrc(queueSrc, it) && E.playing ? PAUSE_SVG : PLAY_SVG;
   });
-  document.querySelectorAll('#cList .row').forEach(r => {
+  document.querySelectorAll('#cList .row, #grid .row').forEach(r => {
     const cur = current && r.dataset.id === current.id, b = r.querySelector('.rplay');
     r.classList.toggle('cur', !!cur);
     if (b) b.innerHTML = cur && E.playing ? PAUSE_SVG : PLAY_SVG;
@@ -1336,6 +1486,7 @@ async function loadTrack(t, autoplay) {
   E.rate = t.settings.rate;
   E.loopA = t.loopA ?? null; E.loopB = t.loopB ?? null;
   E.repeatOne = repeatMode === 'one';
+  E.rev = !!t.settings.reverse && t.settings.mode !== 'tempo';
   audio.src = url;
   audio.loop = E.repeatOne;
   applyRate();
@@ -1379,7 +1530,7 @@ E.onended = () => {
   if (!current) return;
   const q = getQueue();
   if (q.indexOf(current.id) < q.length - 1 || repeatMode === 'all') next();
-  else E.seek(0);
+  else E.seek(E.rev ? E.duration() : 0);
 };
 E.onstate = () => {
   document.body.classList.toggle('playing', E.playing);
@@ -1442,6 +1593,7 @@ function renderPlayer() {
   $('#stDown').disabled = $('#stUp').disabled = !vari;
   // Volume
   $('#resetSpeed').classList.toggle('on', s.rate !== 1);
+  $('#revToggle').classList.toggle('on', !!s.reverse && s.mode !== 'tempo');
   $('#resetGain').classList.toggle('on', s.gainDb !== 0);
   const g = $('#rGain'); g.value = s.gainDb; paintRange(g, 0);
   $('#vGain').textContent = fmtNum(s.gainDb) + ' dB';
@@ -1470,6 +1622,7 @@ function renderChips() {
   }
   if (s.rate !== 1) out.push(`<span class="chip hot">${s.mode === 'vari' ? 'Varispeed' : 'Tempo'}</span>`);
   if (s.gainDb !== 0) out.push(`<span class="chip hot">${fmtNum(s.gainDb)} dB</span>`);
+  if (s.reverse && s.mode !== 'tempo') out.push('<span class="chip hot">◀ Reverse</span>');
   if (loopInfo && t.loop && t.loop.on) out.push(`<span class="chip hot">∞ ${loopInfo.bars} mes.</span>`);
   $('#pChips').innerHTML = out.join('');
 }
@@ -1494,6 +1647,13 @@ $('#rRate').addEventListener('input', e => {
 });
 $('#stUp').onclick = () => setRate(Math.pow(2, (Math.round(12 * Math.log2(current.settings.rate)) + 1) / 12));
 $('#stDown').onclick = () => setRate(Math.pow(2, (Math.round(12 * Math.log2(current.settings.rate)) - 1) / 12));
+$('#revToggle').onclick = () => {
+  if (current.settings.mode === 'tempo') return toast('Le Reverse marche en mode Varispeed');
+  current.settings.reverse = !current.settings.reverse;
+  E.setReverse(!!current.settings.reverse);
+  toast(current.settings.reverse ? 'Lecture à l\'envers' : 'Lecture normale');
+  renderPlayer(); saveSoon();
+};
 $('#resetSpeed').onclick = () => { setRate(1); toast('Vitesse remise à 100 %'); };
 $('#rRate').addEventListener('dblclick', () => setRate(1));
 $('#modeSeg').addEventListener('click', e => {
@@ -1829,7 +1989,7 @@ function drawOverview(ct, span, dur, LI) {
     if (g.id !== e.pointerId) return;
     const dx = e.clientX - g.x0;
     if (g.type === 'pending' && Math.abs(dx) > 6) {
-      g.type = S.can() ? 'scratch' : 'drag';
+      g.type = 'drag';
       g.t0 = E.time();
       if (g.type === 'scratch') S.begin(g.t0);
     }
@@ -1867,6 +2027,31 @@ function drawOverview(ct, span, dur, LI) {
   ov.addEventListener('pointerup', ovUp); ov.addEventListener('pointercancel', ovUp);
 })();
 
+/* ---------- Easter egg : jouer avec le disque ----------
+   Doigt posé = tape stop. Faire tourner le disque = le son suit (×2 max,
+   en avant ou en arrière). Lâcher = le plateau repart avec son inertie. */
+let discHeld = false;
+(() => {
+  const wrap = document.querySelector('.disc-wrap');
+  let g = null;
+  const ang = e => { const r = wrap.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; };
+  wrap.addEventListener('pointerdown', e => {
+    if (!current || !S.can() || g) return;
+    wrap.setPointerCapture(e.pointerId);
+    g = { id: e.pointerId, last: ang(e), acc: 0, base: angle };
+    S.begin(E.time()); discHeld = true;
+  });
+  wrap.addEventListener('pointermove', e => {
+    if (!g || e.pointerId !== g.id) return;
+    const a = ang(e); let d = a - g.last; if (d > 180) d -= 360; if (d < -180) d += 360;
+    g.last = a; g.acc += d;
+    S.drag(g.acc / 360 * TURN_SECONDS);              // un tour de disque = 1,8 s de son
+  });
+  const up = e => { if (!g || e.pointerId !== g.id) return; S.release(); discHeld = false; angle = (g.base + g.acc) % 360; g = null; };
+  wrap.addEventListener('pointerup', up); wrap.addEventListener('pointercancel', up);
+  wrap.addEventListener('pointermove', e => { if (g && e.pointerId === g.id) angle = g.base + g.acc; });
+})();
+
 /* ---------- Animation : disque + temps ---------- */
 let angle = 0, vel = 0, last = performance.now();
 function frame(now) {
@@ -1876,11 +2061,11 @@ function frame(now) {
     S.prep();
     if (!fine.has(current.id) && decoded.has(current.id)) fine.set(current.id, finePeaks(decoded.get(current.id)));
   }
-  const target = !current ? 0 : E.scratching ? 360 / TURN_SECONDS * S.rate : !E.playing ? 0 : 360 / TURN_SECONDS * E.rate;
-  if (E.scratching) vel = target;                                           // le disque suit la main
+  const target = !current ? 0 : E.scratching ? 360 / TURN_SECONDS * S.rate : !E.playing ? 0 : 360 / TURN_SECONDS * E.signedRate();
+  if (E.scratching) vel = discHeld ? 0 : target;                            // le disque suit la main / son élan
   else vel += (target - vel) * Math.min(1, dt * (target > vel ? 3.2 : 2.2));   // démarrage / freinage doux
   if (Math.abs(vel) < 0.05 && !E.scratching) vel = 0;
-  angle = (angle + vel * dt) % 360;
+  if (!discHeld) angle = (angle + vel * dt) % 360;
   if (playerOpen) {
     $('#disc').style.transform = `rotate(${angle}deg)`;
     drawWave();
