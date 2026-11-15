@@ -274,8 +274,9 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
   </header>
   <p class="sync-info" id="syncInfo"></p>
   <div class="seg lib-seg" id="libSeg">
-    <button data-lib="projects" class="on">Projets</button>
-    <button data-lib="all">Tous les sons</button>
+    <button data-lib="prods" class="on">Projets</button>
+    <button data-lib="folders">Dossiers</button>
+    <button data-lib="all">Tous</button>
     <button data-lib="playlists">Playlists</button>
   </div>
   <div id="installTip" class="install hidden">
@@ -285,6 +286,9 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
   <div id="allTools" class="hidden">
     <div class="c-tools"><input type="search" class="search" id="allSearch" placeholder="Rechercher un son, un dossier, un BPM…" autocomplete="off"></div>
     <div style="display:flex;gap:8px;align-items:center;margin:8px 0 6px"><div class="seg" id="allSort" style="flex:1;margin:0"><button data-sort="recent" class="on">Récents</button><button data-sort="name">A → Z</button><button data-sort="bpm">BPM</button></div><button class="pill" id="allSelect">Choisir</button></div>
+  </div>
+  <div id="prodTools" class="hidden">
+    <div class="seg" id="prodSort" style="margin:0 0 18px"><button data-sort="recent" class="on">Récents</button><button data-sort="name">A → Z</button><button data-sort="bpm">BPM</button><button data-sort="versions">Versions</button></div>
   </div>
   <div id="grid" class="grid"></div>
   <p class="build"><span id="buildInfo"></span> · <button class="upd" id="btnUpdate">Mettre à jour</button> · <a class="upd" href="regle.html">Règle</a></p>
@@ -524,6 +528,8 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
     <p class="hint">Pour les nouveaux sons, et pour les versions dont le BPM est déduit des autres versions.</p>
     <label style="margin-bottom:6px">Downbeat par défaut</label>
     <div class="seg" id="stDown"><button data-d="start">Début du fichier</button><button data-d="auto">Détection auto</button></div>
+    <label style="margin:18px 0 6px">Catégories affichées</label>
+    <div id="stTabs"></div>
     <label style="margin:18px 0 6px">Bibliothèque</label>
     <p class="hint" id="stLib" style="margin-top:0"></p>
     <p class="hint" id="stStore"></p>
@@ -548,7 +554,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 20, version: '3.2', date: '15/11/2026' };
+const BUILD = { n: 21, version: '3.3', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -620,7 +626,7 @@ let tracks = [];
 let playlists = [];
 let queue = [], queueSrc = null;   // file de lecture (ids) et sa source {kind,key}
 let view = null;                   // collection ouverte {kind:'project'|'playlist', key}
-let libTab = 'projects', editOrder = false;
+let libTab = 'prods', editOrder = false;
 const byId = id => tracks.find(t => t.id === id);
 const hashHue = s => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; return (h >>> 0) % 360; };
 const natural = (a, b) => a.localeCompare(b, 'fr', { numeric: true, sensitivity: 'base' });
@@ -1121,7 +1127,7 @@ async function importOne(f, { project = IMPORTS, src = null, existing = null } =
   }
   const meta = guessMeta(f.name), id = uid();
   const t = {
-    id, fileName: f.name, title: f.name.replace(/\.[^.]+$/, ''), project, src, size: f.size,
+    id, fileName: f.name, title: f.name.replace(/\.[^.]+$/, ''), project, src, size: f.size, mtime: f.lastModified || Date.now(),
     artist: localStorage.getItem('platine.artist') || '',
     bpm: meta.bpm, key: meta.key, notes: '', created: Date.now(), loop: { ...LOOP_DEFAULT, on: prefs.loopDefault && !!meta.bpm, ...(prefs.downDefault === 'auto' ? { manualDown: false, autoChosen: true } : {}) },
     duration: info.duration, peaks: info.peaks, peakDb: info.peakDb,
@@ -1343,6 +1349,7 @@ function collectionTracks(v) {
   if (!v) return [];
   if (v.kind === 'project') return sortProject(tracks.filter(t => t.project === v.key));
   if (v.kind === 'all') return allTracks();
+  if (v.kind === 'prods') return sortedProds().map(p => p.main);
   const p = playlists.find(x => x.id === v.key);
   if (p && p.smart) return smartTracks(p);
   return p ? p.trackIds.map(byId).filter(Boolean) : [];
@@ -1354,28 +1361,41 @@ function projectNames() {
 }
 let libItems = [];
 function sameSrc(a, b) { return a && b && a.kind === b.kind && a.key === b.key; }
+const TAB_IDS = ['prods', 'folders', 'all', 'playlists'];
+function visibleTabs() { const v = TAB_IDS.filter(k => prefs.tabs[k] !== false); return v.length ? v : ['all']; }
 function renderLibrary() {
-  document.querySelectorAll('#libSeg button').forEach(b => b.classList.toggle('on', b.dataset.lib === libTab));
+  const vis = visibleTabs();
+  if (!vis.includes(libTab)) libTab = vis[0];
+  document.querySelectorAll('#libSeg button').forEach(b => { b.classList.toggle('on', b.dataset.lib === libTab); b.classList.toggle('hidden', !vis.includes(b.dataset.lib)); });
   const noTracks = tracks.length === 0;
   $('#empty').classList.toggle('hidden', !noTracks);
-  $('#libSeg').classList.toggle('hidden', noTracks);
+  $('#libSeg').classList.toggle('hidden', noTracks || vis.length < 2);
+  $('#prodTools').classList.toggle('hidden', noTracks || libTab !== 'prods');
   const ls = JSON.parse(localStorage.getItem('platine.lastSync') || 'null'), nSrc = Object.keys(loadSources()).length;
   $('#syncInfo').textContent = !ls ? '' : nSrc > 1 ? `${nSrc} dossiers synchronisés · dernière synchro ${ago(ls.at)}` : `Synchro « ${ls.root} » ${ago(ls.at)}`;
   $('#allTools').classList.toggle('hidden', noTracks || libTab !== 'all');
   $('#grid').classList.toggle('is-list', libTab === 'all');
   if (noTracks) { $('#grid').innerHTML = ''; return; }
   if (libTab === 'all') { libItems = []; renderAll_(); return; }
-  if (libTab === 'projects') {
+  if (libTab === 'prods') {
+    libItems = sortedProds();
+  } else if (libTab === 'folders') {
     libItems = projectNames().map(name => ({ kind: 'project', key: name, name, list: collectionTracks({ kind: 'project', key: name }) }));
   } else {
     libItems = playlists.slice().sort((a, b) => b.created - a.created).map(p => ({ kind: 'playlist', key: p.id, name: p.name, smart: !!p.smart, list: collectionTracks({ kind: 'playlist', key: p.id }) }));
   }
   const cards = libItems.map((it, i) => {
-    const playing = sameSrc(queueSrc, it) && E.playing;
+    const isProd = it.kind === 'prod';
+    const cur = isProd ? !!(current && it.list.includes(current)) : sameSrc(queueSrc, it);
+    const playing = cur && E.playing;
     const dur = it.list.reduce((s, t) => s + (t.duration || 0), 0);
-    return `<div class="card${sameSrc(queueSrc, it) ? ' is-current' : ''}" data-i="${i}" style="animation-delay:${Math.min(i, 10) * 35}ms">
-      <div class="cover"${it.list.some(t => coverURLs.has(t.id)) ? '' : ` data-art="${esc('art:projet:' + it.name)}"`} style="background-image:${groupCover(it.list, it.name)}">${it.list.length ? `<button class="cplay" aria-label="Lire">${playing ? PAUSE_SVG : PLAY_SVG}</button>` : ''}</div>
-      <div class="ct"><div><h3>${esc(it.name)}</h3><p>${it.smart ? '<span class="tag">AUTO</span>' : ''}${it.list.length} son${it.list.length > 1 ? 's' : ''}${dur ? ' · ' + fmt(dur) : ''}</p></div></div>
+    const artK = isProd ? (it.list.length > 1 ? 'art:prod:' + it.name.toLowerCase() : artKey(it.main)) : 'art:projet:' + it.name;
+    const cov = isProd ? (coverURLs.has(it.main.id) ? `url('${coverURLs.get(it.main.id)}')` : (artURLs.has(artK) ? `url('${artURLs.get(artK)}')` : (queueArt(artK), gradient(hashHue(it.name))))) : groupCover(it.list, it.name);
+    const hasOwn = isProd ? coverURLs.has(it.main.id) : it.list.some(t => coverURLs.has(t.id));
+    const sub = isProd ? (it.list.length > 1 ? `${it.list.length} versions` : fmt(it.main.duration)) : `${it.smart ? '<span class="tag">AUTO</span>' : ''}${it.list.length} son${it.list.length > 1 ? 's' : ''}${dur ? ' · ' + fmt(dur) : ''}`;
+    return `<div class="card${cur ? ' is-current' : ''}" data-i="${i}" style="animation-delay:${Math.min(i, 10) * 35}ms">
+      <div class="cover"${hasOwn ? '' : ` data-art="${esc(artK)}"`} style="background-image:${cov}">${it.list.length ? `<button class="cplay" aria-label="Lire">${playing ? PAUSE_SVG : PLAY_SVG}</button>` : ''}</div>
+      <div class="ct"><div><h3>${esc(it.name)}</h3><p>${sub}</p></div></div>
     </div>`;
   });
   if (libTab === 'playlists') cards.unshift(`<div class="card" data-new="1"><div class="cover new">${SVG.plus}</div><div class="ct"><div><h3>Nouvelle playlist</h3><p>&nbsp;</p></div></div></div>`,
@@ -1397,6 +1417,13 @@ $('#grid').addEventListener('click', e => {
   if (card.dataset.new === 'smart') return openSmart(null);
   if (card.dataset.new) return askName('Nouvelle playlist', '', name => createPlaylist(name));
   const it = libItems[+card.dataset.i]; if (!it) return;
+  if (it.kind === 'prod') {                         // projet : joue la version principale, versions dans le lecteur
+    const src = { kind: 'prods', key: 'all' };
+    if (current && it.list.includes(current)) { if (e.target.closest('.cplay')) togglePlay(); else { if (!E.playing) play(); openPlayer(); } return; }
+    playFrom(src, it.main);
+    if (!e.target.closest('.cplay')) openPlayer();
+    return;
+  }
   if (e.target.closest('.cplay')) {
     if (sameSrc(queueSrc, it) && current) togglePlay(); else if (it.list.length) playFrom(it, it.list[0]);
     return;
@@ -1620,9 +1647,10 @@ $('#nInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#nOk')
 
 function refreshCardIcons() {
   document.querySelectorAll('#grid .card[data-i]').forEach(c => {
-    const it = libItems[+c.dataset.i], b = c.querySelector('.cplay');
-    c.classList.toggle('is-current', sameSrc(queueSrc, it));
-    if (b) b.innerHTML = sameSrc(queueSrc, it) && E.playing ? PAUSE_SVG : PLAY_SVG;
+    const it = libItems[+c.dataset.i], b = c.querySelector('.cplay'); if (!it) return;
+    const cur = it.kind === 'prod' ? !!(current && it.list.includes(current)) : sameSrc(queueSrc, it);
+    c.classList.toggle('is-current', cur);
+    if (b) b.innerHTML = cur && E.playing ? PAUSE_SVG : PLAY_SVG;
   });
   document.querySelectorAll('#cList .row, #grid .row').forEach(r => {
     const cur = current && r.dataset.id === current.id, b = r.querySelector('.rplay');
@@ -1951,7 +1979,7 @@ function inferredBpm(t) {
   for (const [b, c] of cnt) if (c > n || (c === n && Math.abs(b - 120) < Math.abs(best - 120))) { n = c; best = b; }
   vbCache.set(t.id, best); return best;
 }
-function resetVersionCache() { vKeyCache.clear(); vbCache.clear(); }
+function resetVersionCache() { vKeyCache.clear(); vbCache.clear(); prodCache = null; }
 /* Position équivalente dans une autre version : même mesure, même temps.
    Si la version d'arrivée est plus courte, on retombe sur la mesure équivalente. */
 function syncedPos(from, to, p) {
@@ -2012,6 +2040,50 @@ function predecodeVersions() {
     for (const u of versionsOf(t).slice(0, 4)) { if (current !== t) return; try { await getBuffer(u); } catch (e) {} await sleep(50); }
   }, 600);
 }
+
+
+/* ---------- Projets = prods (regroupement des versions) ----------
+   Chaque prod est affichée avec un nom propre (sans BPM, tonalité, tags),
+   ses versions regroupées, et la date iCloud la plus récente.            */
+const TAGS = /\b(gntk|genetic|boygnetik|boy\s?gnetik)\b/gi;
+function cleanName(title) {
+  let s = (title || '').replace(/[_]+/g, ' ');
+  s = s.replace(/\b\d{2,3}(?:[.,]\d)?\s*-?\s*b\.?p\.?m?\b/gi, ' ').replace(/\bbpm\s*\d{2,3}\b/gi, ' ');
+  s = s.replace(/\b[A-G][#b]?\s?(?:min|maj|minor|major|m)\b/g, ' ').replace(TAGS, ' ');
+  s = s.replace(/\s{2,}/g, ' ').replace(/^[\s\-–.]+|[\s\-–.]+$/g, '');
+  return s || title || '';
+}
+let prodCache = null;
+function prods() {
+  if (prodCache) return prodCache;
+  const parent = new Map(tracks.map(t => [t.id, t.id]));
+  const find = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+  for (const t of tracks) for (const u of versionsOf(t)) { const a = find(t.id), b = find(u.id); if (a !== b) parent.set(a, b); }
+  const groups = new Map();
+  for (const t of tracks) { const r = find(t.id); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(t); }
+  prodCache = [...groups.values()].map(list => {
+    list.sort((a, b) => natural(a.title, b.title));
+    // version principale : celle qui a un BPM dans son nom, au nom le plus court
+    const cnt = new Map(); for (const t of list) { const b = ownBpm(t); if (b) cnt.set(b, (cnt.get(b) || 0) + 1); }
+    let dom = 0, dn = 0; for (const [b, c] of cnt) if (c > dn || (c === dn && Math.abs(b - 120) < Math.abs(dom - 120))) { dom = b; dn = c; }
+    const main = list.slice().sort((a, b) => ((ownBpm(b) === dom && dom ? 1 : 0) - (ownBpm(a) === dom && dom ? 1 : 0)) || (a.title.length - b.title.length))[0];
+    const PI = list.length > 1 ? prodInfo(main) : null;
+    const name = PI ? PI.name : cleanName(main.title);
+    const date = Math.max(...list.map(t => t.mtime || t.created || 0));
+    return { kind: 'prod', key: main.id, name, list, main, date, bpm: bpmOf(main) };
+  });
+  return prodCache;
+}
+let prodSort = 'recent';
+function sortedProds() {
+  const l = prods().slice();
+  if (prodSort === 'name') l.sort((a, b) => natural(a.name, b.name));
+  else if (prodSort === 'bpm') l.sort((a, b) => (a.bpm || 999) - (b.bpm || 999) || natural(a.name, b.name));
+  else if (prodSort === 'versions') l.sort((a, b) => b.list.length - a.list.length || b.date - a.date);
+  else l.sort((a, b) => b.date - a.date);
+  return l;
+}
+$('#prodSort').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; prodSort = b.dataset.sort; document.querySelectorAll('#prodSort button').forEach(x => x.classList.toggle('on', x === b)); renderLibrary(); });
 
 /* ---------- Onglet Loop ---------- */
 function renderLoopUI() {
@@ -2450,9 +2522,9 @@ async function deleteTrack(t) {
 
 
 /* ---------- Paramètres ---------- */
-const PREF_DEFAULT = { autoNorm: true, loopDefault: true, downDefault: 'start' };
+const PREF_DEFAULT = { autoNorm: true, loopDefault: true, downDefault: 'start', tabs: { prods: true, folders: true, all: true, playlists: true } };
 let prefs = { ...PREF_DEFAULT };
-try { prefs = { ...PREF_DEFAULT, ...JSON.parse(localStorage.getItem('platine.prefs') || '{}') }; } catch (e) {}
+try { const sv = JSON.parse(localStorage.getItem('platine.prefs') || '{}'); prefs = { ...PREF_DEFAULT, ...sv, tabs: { ...PREF_DEFAULT.tabs, ...(sv.tabs || {}) } }; } catch (e) {}
 function savePrefs() { try { localStorage.setItem('platine.prefs', JSON.stringify(prefs)); } catch (e) {} }
 const normGain = t => (t && isFinite(t.peakDb)) ? clamp(Math.round((-0.3 - t.peakDb) * 2) / 2, -24, 12) : 0;
 /* Gain effectif : réglage manuel s'il existe, sinon normalisation auto (si activée) */
@@ -2462,8 +2534,11 @@ function renderSettings() {
   $('#stLoop').classList.toggle('on', prefs.loopDefault);
   document.querySelectorAll('#stDown button').forEach(b => b.classList.toggle('on', b.dataset.d === prefs.downDefault));
   $('#stVersion').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · ${BUILD.date}`;
+  const TL = { prods: ['Projets', 'tes prods, versions regroupées'], folders: ['Dossiers', 'tes dossiers synchronisés'], all: ['Tous', 'tous les sons, recherche et tri'], playlists: ['Playlists', 'manuelles et intelligentes'] };
+  $('#stTabs').innerHTML = TAB_IDS.map(k => `<div class="ctl row"><span>${TL[k][0]} <small style="opacity:.6">· ${TL[k][1]}</small></span><button class="switch${prefs.tabs[k] !== false ? ' on' : ''}" data-tab="${k}"><i></i></button></div>`).join('');
   const n = tracks.length, dur = tracks.reduce((s, t) => s + (t.duration || 0), 0);
-  $('#stLib').textContent = `${n} son${n > 1 ? 's' : ''} · ${projectNames().length} projet${projectNames().length > 1 ? 's' : ''} · ${playlists.length} playlist${playlists.length > 1 ? 's' : ''} · ${Math.round(dur / 60)} min de musique`;
+  const np = prods().length, nd = projectNames().length;
+  $('#stLib').textContent = `${n} son${n > 1 ? 's' : ''} · ${np} projet${np > 1 ? 's' : ''} · ${nd} dossier${nd > 1 ? 's' : ''} · ${playlists.length} playlist${playlists.length > 1 ? 's' : ''} · ${Math.round(dur / 60)} min de musique`;
   $('#stStore').textContent = 'Calcul…';
   if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(e => {
     const go = v => (v / 1e9).toFixed(2).replace('.', ',') + ' Go';
@@ -2479,6 +2554,12 @@ $('#stNorm').onclick = () => {
   if (current && !current.settings.gainManual) { applyGain(autoGain(current)); renderPlayer(); }
   toast(prefs.autoNorm ? 'Normalisation automatique activée' : 'Normalisation automatique désactivée');
 };
+$('#stTabs').addEventListener('click', e => {
+  const b = e.target.closest('.switch'); if (!b) return;
+  const k = b.dataset.tab, on = prefs.tabs[k] !== false;
+  if (on && visibleTabs().length === 1) return toast('Garde au moins une catégorie');
+  prefs.tabs[k] = !on; savePrefs(); renderSettings(); renderLibrary();
+});
 $('#stLoop').onclick = () => { prefs.loopDefault = !prefs.loopDefault; savePrefs(); renderSettings(); };
 $('#stDown').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; prefs.downDefault = b.dataset.d; savePrefs(); renderSettings(); });
 $('#stUpdate').onclick = () => forceUpdate();

@@ -5,6 +5,8 @@ Tes sons restent **sur ton téléphone** : rien n'est envoyé en ligne.
 
 ## Fonctions (v2)
 
+- **Projets** : une carte par prod, avec un nom propre (sans BPM, tonalité ni tags) et ses versions regroupées ; un tap lance la version principale, les autres sont dans le lecteur. Tri Récents (date iCloud), A→Z, BPM, Versions.
+- **Dossiers** : les dossiers synchronisés (semaines, shortlists…). **Catégories** affichées réglables dans les Paramètres.
 - **Partage** : bouton Partager en haut du lecteur, et sélection multiple (appui long sur un son, ou « Choisir ») pour envoyer plusieurs fichiers d'un coup par WhatsApp, AirDrop…
 - **Paramètres** (roue crantée) : normalisation automatique du volume (activée par défaut), loop par défaut, downbeat par défaut, espace utilisé, mise à jour.
 - **Versions** : les sons dont le nom commence pareil (ex. « Nolah_… ») sont reconnus comme versions d'une même prod. Pastilles « Versions » dans le lecteur : la bascule garde le même moment musical (même mesure), même si la version est plus courte. Une version sans BPM dans son nom prend celui des autres (affiché « ≈ »).
