@@ -497,7 +497,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 16, version: '3.0', date: '15/11/2026' };
+const BUILD = { n: 17, version: '3.0.1', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -1679,8 +1679,9 @@ $('#miniPlay').onclick = togglePlay;
 function renderPlayer() {
   if (!current) return;
   const t = current, s = t.settings;
-  $('#pTitle').textContent = t.title;
-  $('#pArtist').textContent = [t.artist, t.project].filter(Boolean).join(' · ') || ' ';
+  const PI = prodInfo(t);
+  $('#pTitle').textContent = PI ? PI.name : t.title;
+  $('#pArtist').textContent = [PI ? PI.version : '', t.artist, t.project].filter(Boolean).join(' · ') || ' ';
   $('#discLabel').style.backgroundImage = coverCSS(t); $('#discLabel').dataset.art = coverURLs.has(t.id) ? '' : artKey(t);
   $('#tDur').textContent = fmt(t.duration);
   renderChips();
@@ -1859,7 +1860,8 @@ function checkLoop() {
 
 /* ---------- Versions d'une même prod ----------
    Deux sons sont des versions l'un de l'autre quand leur nom commence par le
-   même mot (≥ 4 lettres, ex. « Nolah_Synth », « nolahstring », « Nolah_140BPM »).
+   même mot : identique dès 3 lettres (« YUV_174BPM », « YUV_nobass »), ou l'un
+   commençant par l'autre dès 5 lettres (« Nolah_Synth », « nolahstring »).
    Une version sans BPM dans son nom hérite du BPM des autres versions.        */
 const VSTOP = new Set(['untitled', 'loop', 'loops', 'beat', 'beats', 'audio', 'sample', 'samples', 'test', 'final', 'master', 'bounce', 'export', 'track', 'instru', 'instrumental', 'prod', 'gntk', 'song', 'demo', 'idea', 'nouveau', 'version', 'copie', 'copy']);
 const vKeyCache = new Map();
@@ -1868,12 +1870,18 @@ function vKey(t) {
   if (k !== undefined) return k;
   const s = (t.title || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   k = s.split(/[^a-z0-9]+/).find(x => x && !/^\d+$/.test(x)) || '';
-  if (k.length < 4 || VSTOP.has(k)) k = '';
+  if (k.length < 3 || VSTOP.has(k)) k = '';
   vKeyCache.set(t.id, k); return k;
 }
 function versionsOf(t) {
   const k = vKey(t); if (!k) return [];
-  return tracks.filter(u => { if (u === t) return false; const j = vKey(u); return j && (j.startsWith(k) || k.startsWith(j)); });
+  return tracks.filter(u => {
+    if (u === t) return false;
+    const j = vKey(u); if (!j) return false;
+    if (j === k) return true;
+    const short = j.length < k.length ? j : k;
+    return short.length >= 5 && (j.startsWith(k) || k.startsWith(j));
+  });
 }
 const vbCache = new Map();
 function inferredBpm(t) {
@@ -1898,6 +1906,14 @@ function syncedPos(from, to, p) {
   if (Lt.on && Lt.bars) nT = Math.min(nT, Lt.bars);
   if (nT >= 1) bars = bars % nT;
   return clamp(dt + bars * barT, 0, Math.max(0, durT - 0.01));
+}
+function prodInfo(t) {                            // { nom de la prod, nom de la version } ou null
+  const vs = versionsOf(t); if (!vs.length) return null;
+  const all = [t, ...vs], base = all.map(vKey).reduce((a, b) => (b.length < a.length ? b : a));
+  let name = '';
+  for (const u of all) { const m = (u.title || '').match(/^[^A-Za-z0-9]*([A-Za-z0-9]+)/); if (m && m[1].toLowerCase() === base) { name = m[1]; break; } }
+  if (!name) name = base.charAt(0).toUpperCase() + base.slice(1);
+  return { name, base, version: shortVersionName(t, base), count: all.length };
 }
 function shortVersionName(u, base) {
   const t = u.title || '', low = t.toLowerCase();
