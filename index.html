@@ -452,7 +452,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 8, version: '2.6', date: '15/11/2026' };
+const BUILD = { n: 9, version: '2.6.1', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -880,12 +880,16 @@ document.addEventListener('click', unlock, true);
 
 /* ---------- Import des sons ---------- */
 const TYPES = { wav:'audio/wav', mp3:'audio/mpeg', m4a:'audio/mp4', aac:'audio/aac', aif:'audio/aiff', aiff:'audio/aiff', flac:'audio/flac' };
+/* Analyse d'un son à l'import (durée, forme d'onde, crête).
+   On utilise un contexte audio « hors ligne » à 22 kHz : iOS limite le nombre
+   de moteurs audio ouverts en même temps, et ça divise la mémoire par deux. */
 async function analyze(buf) {
-  const C = window.AudioContext || window.webkitAudioContext;
-  const ctx = new C();
-  try {
+  const O = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  let dec;
+  try { dec = new O(1, 1, 22050); } catch (e) { dec = ctx(); }
+  {
     const ab = await new Promise((res, rej) => {
-      const p = ctx.decodeAudioData(buf, res, rej);
+      const p = dec.decodeAudioData(buf, res, rej);
       if (p && p.then) p.then(res, rej);
     });
     const N = 1000, peaks = new Float32Array(N), len = ab.length, step = len / N;
@@ -900,7 +904,7 @@ async function analyze(buf) {
     let max = 0; for (const p of peaks) if (p > max) max = p;
     const norm = Array.from(peaks, p => Math.round(p / (max || 1) * 1000) / 1000);
     return { duration: ab.duration, peaks: norm, peakDb: max > 0 ? 20 * Math.log10(max) : -96 };
-  } finally { try { ctx.close(); } catch (e) {} }
+  }
 }
 function guessMeta(name) {
   const m = /(?:^|[^\d])(\d{2,3}(?:[.,]\d)?)\s*[-_ ]?\s*b\.?p\.?m?(?![a-z])/i.exec(name) || /bpm\s*[-_ ]?\s*(\d{2,3}(?:[.,]\d)?)/i.exec(name);
@@ -962,8 +966,14 @@ async function importFiles(fileList) {
    Chaque sous-dossier devient un projet. Rien n'est supprimé automatiquement. */
 let syncing = false;
 async function syncFolder(fileList) {
-  const files = [...fileList].filter(f => AUDIO_EXT.test(f.name) && !f.name.startsWith('.') && !/(^|\/)\./.test(f.webkitRelativePath || ''));
-  if (!files.length) return toast('Aucun son trouvé dans ce dossier');
+  const all = [...fileList];
+  if (!all.length) return toast("Aucun fichier reçu : choisis un dossier puis touche « Ouvrir »", 5000);
+  const files = all.filter(f => AUDIO_EXT.test(f.name) && !f.name.startsWith('.') && !/(^|\/)\./.test(f.webkitRelativePath || ''));
+  toast(`${all.length} fichier${all.length > 1 ? 's' : ''} reçu${all.length > 1 ? 's' : ''} · ${files.length} son${files.length > 1 ? 's' : ''}`, 2500);
+  await sleep(800);
+  if (!files.length) return toast('Aucun son (WAV, MP3, AIFF…) dans ce dossier', 4000);
+  let wake = null;
+  try { wake = navigator.wakeLock && await navigator.wakeLock.request('screen'); } catch (e) {}   // écran allumé pendant la synchro
   askPersist();
   syncing = true; $('#btnSync').classList.add('spin');
   const root = (files[0].webkitRelativePath || '').split('/')[0] || IMPORTS;
@@ -979,7 +989,7 @@ async function syncFolder(fileList) {
     return twin ? { t: twin, same: true } : null;
   };
   const seen = new Set();
-  let added = 0, updated = 0, failed = 0, todo = 0;
+  let added = 0, updated = 0, failed = 0, todo = 0, lastErr = '';
   const plan = files.map(f => { const rel = f.webkitRelativePath || f.name; const ex = findExisting(f, rel); if (!ex || !ex.same) todo++; return { f, rel, ex }; });
   if (todo) toast(`Synchro : ${todo} son${todo > 1 ? 's' : ''} à importer…`, 0);
   let n = 0;
@@ -992,8 +1002,10 @@ async function syncFolder(fileList) {
     try {
       if (ex) { await importOne(f, { existing: ex.t }); ex.t.mtime = f.lastModified; await dbPut(ex.t); updated++; }
       else { const t = await importOne(f, { project, src: rel }); t.mtime = f.lastModified || Date.now(); await dbPut(t); added++; }
-    } catch (e) { console.error(e); failed++; }
+    } catch (e) { console.error(e); failed++; lastErr = `${f.name} : ${e && (e.message || e.name) || e}`; }
+    if (n % 10 === 0) { renderLibrary(); await sleep(30); }          // laisse respirer l'iPhone
   }
+  try { wake && wake.release(); } catch (e) {}
   const missing = tracks.filter(t => t.src && t.src.split('/')[0] === root && !seen.has(t.src)).length;
   localStorage.setItem('platine.lastSync', JSON.stringify({ at: Date.now(), root }));
   syncing = false; $('#btnSync').classList.remove('spin');
@@ -1004,6 +1016,7 @@ async function syncFolder(fileList) {
   if (failed) msg.push(`${failed} illisible${failed > 1 ? 's' : ''}`);
   if (missing) msg.push(`${missing} absent${missing > 1 ? 's' : ''} du dossier`);
   toast(msg.length ? 'Synchro : ' + msg.join(' · ') : 'Tout est à jour ✓', 3500);
+  if (failed) { await sleep(3600); toast('Dernière erreur — ' + lastErr, 8000); }
 }
 
 /* ---------- Pochettes ---------- */
@@ -1776,7 +1789,11 @@ function toast(msg, ms = 2200) {
 }
 $('#btnAdd').onclick = $('#btnAdd2').onclick = () => $('#fileInput').click();
 $('#fileInput').onchange = e => { const f = e.target.files; importFiles(f).finally(() => { e.target.value = ''; }); };
-$('#btnSync').onclick = $('#btnSync2').onclick = () => { if (syncing) return toast('Synchro en cours…'); $('#folderInput').click(); };
+$('#btnSync').onclick = $('#btnSync2').onclick = () => {
+  if (syncing) return toast('Synchro en cours…');
+  toast('Va dans ton dossier (ex : LOOPS), puis touche « Ouvrir ». Un gros dossier iCloud peut mettre quelques minutes à arriver.', 6000);
+  $('#folderInput').click();
+};
 $('#folderInput').onchange = e => { const f = e.target.files; syncFolder(f).catch(err => { console.error(err); toast('Erreur pendant la synchro'); syncing = false; $('#btnSync').classList.remove('spin'); }).finally(() => { e.target.value = ''; }); };
 document.addEventListener('keydown', e => { if (e.code === 'Space' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); togglePlay(); } });
 
