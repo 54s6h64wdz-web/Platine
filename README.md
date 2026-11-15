@@ -6,8 +6,9 @@ Tes sons restent **sur ton téléphone** : rien n'est envoyé en ligne.
 ## Fonctions (v2)
 
 - **Forme d'onde défilante** : tête de lecture au centre, zoom (pincer ou − / +), vue d'ensemble en dessous, glisser pour se déplacer.
-- **Easter egg du disque** : pose le doigt sur le disque (tape stop), fais-le tourner (le son suit, ×2 max, avant/arrière), lâche (le plateau repart avec son inertie jusqu'à ×1).
-- **Reverse** (onglet Vitesse) : lecture à l'envers, en mode Varispeed.
+- **Easter egg du disque** : doigt posé = tape stop ; glisse et lâche = le disque est lancé dans ce sens (×2 max), puis l'inertie le ramène à ×1 (ou à l'arrêt en pause).
+- **Pochettes abstraites générées** pour les sons sans image : uniques, calculées à partir du nom, hors connexion.
+- **Reverse** (bouton REV du lecteur) : lecture à l'envers, en mode Varispeed.
 - **Tous les sons** : liste de tous les fichiers avec recherche et tri (récents, A→Z, BPM).
 - **Playlists intelligentes** : se remplissent toutes seules selon des règles (dossiers, BPM min/max, texte dans le nom, tonalité).
 - **Détection du tempo** (onglet Loop) avec ÷2 / ×2, **lignes de mesures** sur la forme d'onde et **A·B par mesures** : touche A (lecture immédiate au début de la mesure), puis B (lecture 3 s avant la fin, qui enchaîne sur A pour vérifier la jonction). Bouton « Tester la jonction ».

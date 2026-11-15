@@ -21,8 +21,8 @@
   --ease:cubic-bezier(.22,1,.36,1);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html{height:100%;background:var(--bg);overflow:hidden}
-body{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);color:var(--text);overflow:hidden;overscroll-behavior:none}
+html{height:100%;background:var(--bg);overflow:hidden;overflow:clip}
+body{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);color:var(--text);overflow:hidden;overflow:clip;overscroll-behavior:none}
 body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:manipulation}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 button:active{transform:scale(.96)}
@@ -96,7 +96,7 @@ svg{display:block}
 .disc{position:absolute;inset:0;border-radius:50%;will-change:transform;
   background:repeating-radial-gradient(circle at 50% 50%,#141416 0 1.3px,#1c1c1f 1.3px 2.8px)}
 .disc::before{content:"";position:absolute;inset:3%;border-radius:50%;border:1px solid rgba(255,255,255,.05)}
-.disc .label{position:absolute;inset:30%;border-radius:50%;background-size:cover;background-position:center;box-shadow:0 0 0 4px #0c0c0d,0 0 0 5px rgba(255,255,255,.06)}
+.disc .label{position:absolute;inset:27%;border-radius:50%;background-size:cover;background-position:center;box-shadow:0 0 0 4px #0c0c0d,0 0 0 5px rgba(255,255,255,.06)}
 .disc .hole{position:absolute;left:50%;top:50%;width:4.5%;height:4.5%;margin:-2.25% 0 0 -2.25%;border-radius:50%;background:#d9d9dc;box-shadow:inset 0 1px 2px rgba(0,0,0,.6)}
 .sheen{position:absolute;inset:0;border-radius:50%;pointer-events:none;
   background:conic-gradient(from 30deg,transparent 0 8%,rgba(255,255,255,.075) 13%,transparent 19% 52%,rgba(255,255,255,.05) 60%,transparent 67%)}
@@ -230,6 +230,8 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 .pl-new input{flex:1;margin:0!important}
 .tab-icons{margin-left:auto;display:flex;gap:2px}
 .tab-icons .tab{padding:10px}
+.tab.rev{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.04em;padding:10px 8px;color:var(--muted)}
+.tab.rev.on{background:var(--accent);color:#1a0b04}
 </style>
 </head>
 <body>
@@ -366,6 +368,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
         <button class="tab" data-tab="gain">Volume</button>
         <button class="tab" data-tab="loop">Loop</button>
         <div class="tab-icons">
+          <button class="tab rev" id="bRev" aria-label="Reverse">REV</button>
           <button class="tab" id="bAddPl" aria-label="Ajouter à une playlist">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h12M3 12h12M3 18h8M18 15v6M15 18h6"/></svg>
           </button>
@@ -486,7 +489,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 13, version: '2.8', date: '15/11/2026' };
+const BUILD = { n: 14, version: '2.9', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -808,7 +811,7 @@ const S = {
     this.node.port.postMessage({ type: 'start', pos, rate: r, vmax: 2, loop: E.loopRange() });
   },
   drag(delta) { this.node.port.postMessage({ type: 'drag', delta }); },
-  release() { this.dragging = false; this.node.port.postMessage({ type: 'release', targetRate: E.playing ? E.signedRate() : 0, loop: E.loopRange() }); },
+  release(v0) { this.dragging = false; this.node.port.postMessage({ type: 'release', v0, targetRate: E.playing ? E.signedRate() : 0, loop: E.loopRange() }); },
   setTarget(r) { if (this.active && !this.dragging) this.node.port.postMessage({ type: 'target', targetRate: r }); },
   finish(pos, rate, time) {                  // le plateau a retrouvé sa vitesse : on rend la main au lecteur normal
     if (!this.active) return;
@@ -1145,11 +1148,96 @@ async function syncFolder(fileList) {
   if (failed) { await sleep(3600); toast('Dernière erreur — ' + lastErr, 8000); }
 }
 
+/* ---------- Pochettes abstraites générées ----------
+   Chaque son sans image reçoit une pochette unique, calculée à partir de
+   son nom (toujours la même), hors connexion. Formes asymétriques pour
+   qu'on voie bien le disque tourner. */
+const artURLs = new Map(), artQueue = [], artQueued = new Set();
+function rng(seedStr) {
+  let a = 2166136261; for (const c of String(seedStr)) { a ^= c.charCodeAt(0); a = Math.imul(a, 16777619); }
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function drawArt(seed, size = 320) {
+  const R = rng(seed), c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d'), S = size, pick = a => a[Math.floor(R() * a.length)];
+  const h = Math.floor(R() * 360), scheme = pick([[0, 30, 60], [0, 150, 180], [0, 40, 200], [0, -40, 140], [0, 180, 210]]);
+  const col = (dh, s, l, a = 1) => `hsla(${(h + dh + 360) % 360},${s}%,${l}%,${a})`;
+  const style = Math.floor(R() * 5);
+  // fond
+  const bg = g.createLinearGradient(0, 0, S * R(), S);
+  bg.addColorStop(0, col(scheme[0], 45 + R() * 30, 10 + R() * 14)); bg.addColorStop(1, col(scheme[1], 50 + R() * 30, 18 + R() * 20));
+  g.fillStyle = bg; g.fillRect(0, 0, S, S);
+  if (style === 0) {                         // halos lumineux
+    g.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 6; i++) {
+      const x = R() * S, y = R() * S, r = S * (0.25 + R() * 0.5), rg = g.createRadialGradient(x, y, 0, x, y, r);
+      rg.addColorStop(0, col(pick(scheme), 75 + R() * 20, 45 + R() * 20, 0.55)); rg.addColorStop(1, col(pick(scheme), 70, 40, 0));
+      g.fillStyle = rg; g.fillRect(0, 0, S, S);
+    }
+  } else if (style === 1) {                  // arcs décentrés
+    const cx = S * (0.15 + R() * 0.7), cy = S * (0.15 + R() * 0.7);
+    for (let i = 0; i < 14; i++) {
+      g.beginPath(); g.lineWidth = S * (0.01 + R() * 0.06); g.strokeStyle = col(pick(scheme), 60 + R() * 35, 35 + R() * 40, 0.5 + R() * 0.5);
+      const a0 = R() * Math.PI * 2; g.arc(cx, cy, S * (0.08 + i * 0.07), a0, a0 + Math.PI * (0.4 + R() * 1.4)); g.stroke();
+    }
+  } else if (style === 2) {                  // éclats
+    for (let i = 0; i < 18; i++) {
+      g.beginPath(); g.fillStyle = col(pick(scheme), 55 + R() * 40, 30 + R() * 45, 0.35 + R() * 0.5);
+      const x = R() * S, y = R() * S, r = S * (0.1 + R() * 0.35); g.moveTo(x, y);
+      for (let k = 0; k < 2 + (R() * 3 | 0); k++) g.lineTo(x + (R() - 0.5) * r * 2, y + (R() - 0.5) * r * 2);
+      g.closePath(); g.fill();
+    }
+  } else if (style === 3) {                  // vagues
+    const n = 7 + (R() * 6 | 0), amp = S * (0.03 + R() * 0.08), fr = 1 + R() * 3, ph = R() * 6;
+    for (let i = 0; i < n; i++) {
+      g.beginPath(); g.fillStyle = col(pick(scheme), 55 + R() * 40, 25 + i / n * 50, 0.75);
+      const y0 = S * i / n; g.moveTo(0, S);
+      for (let x = 0; x <= S; x += 4) g.lineTo(x, y0 + Math.sin(x / S * Math.PI * 2 * fr + ph + i * 0.7) * amp);
+      g.lineTo(S, S); g.closePath(); g.fill();
+    }
+  } else {                                   // bandes diagonales + soleil
+    g.save(); g.translate(S / 2, S / 2); g.rotate(R() * Math.PI); g.translate(-S, -S);
+    for (let x = 0; x < S * 2; x += S * (0.04 + R() * 0.08)) { g.fillStyle = col(pick(scheme), 50 + R() * 40, 25 + R() * 45, 0.6); g.fillRect(x, 0, S * (0.02 + R() * 0.06), S * 2); }
+    g.restore();
+    const x = S * (0.2 + R() * 0.6), y = S * (0.2 + R() * 0.6), rg = g.createRadialGradient(x, y, 0, x, y, S * 0.3);
+    rg.addColorStop(0, col(scheme[2], 90, 70, 0.95)); rg.addColorStop(0.6, col(scheme[2], 90, 55, 0.6)); rg.addColorStop(1, col(scheme[2], 90, 50, 0));
+    g.fillStyle = rg; g.fillRect(0, 0, S, S);
+  }
+  g.globalCompositeOperation = 'source-over';
+  // repère asymétrique (on voit le disque tourner) + grain
+  g.fillStyle = 'rgba(255,255,255,.85)'; g.beginPath(); g.arc(S * (0.72 + R() * 0.12), S * (0.18 + R() * 0.1), S * 0.025, 0, Math.PI * 2); g.fill();
+  const img = g.getImageData(0, 0, S, S), d = img.data;
+  for (let i = 0; i < d.length; i += 4) { const n = (R() - 0.5) * 22; d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+  g.putImageData(img, 0, 0);
+  return new Promise(res => c.toBlob(b => res(URL.createObjectURL(b)), 'image/jpeg', 0.82));
+}
+function artKey(t) { return 'art:' + (t.fileName || t.title || t.id); }
+function queueArt(key) {
+  if (artURLs.has(key) || artQueued.has(key)) return;
+  artQueued.add(key); artQueue.push(key);
+  if (artQueue.length === 1) setTimeout(artWork, 0);
+}
+async function artWork() {
+  const t0 = performance.now();
+  while (artQueue.length && performance.now() - t0 < 30) {
+    const key = artQueue.shift();
+    const url = await drawArt(key);
+    artURLs.set(key, url); artQueued.delete(key);
+    document.querySelectorAll(`[data-art="${CSS.escape(key)}"]`).forEach(el => { el.style.backgroundImage = `url('${url}')`; });
+  }
+  if (artQueue.length) setTimeout(artWork, 16);
+}
+
 /* ---------- Pochettes ---------- */
 function coverCSS(t) {
   const u = coverURLs.get(t.id);
-  return u ? `url("${u}")` : `linear-gradient(135deg,hsl(${t.hue} 72% 72%),hsl(${(t.hue + 45) % 360} 62% 52%))`;
+  if (u) return `url('${u}')`;
+  const k = artKey(t), a = artURLs.get(k);
+  if (a) return `url('${a}')`;
+  queueArt(k);
+  return `linear-gradient(135deg,hsl(${t.hue} 45% 30%),hsl(${(t.hue + 45) % 360} 50% 18%))`;
 }
+const artAttr = t => coverURLs.has(t.id) ? '' : ` data-art="${esc(artKey(t))}"`;
 function squareImage(file, size = 700) {
   return new Promise((res, rej) => {
     const u = URL.createObjectURL(file), img = new Image();
@@ -1178,7 +1266,10 @@ const SVG = {
 const gradient = h => `linear-gradient(135deg,hsl(${h} 72% 72%),hsl(${(h + 45) % 360} 62% 52%))`;
 function groupCover(list, name) {
   const withCover = list.find(t => coverURLs.has(t.id));
-  return withCover ? `url("${coverURLs.get(withCover.id)}")` : gradient(hashHue(name));
+  if (withCover) return `url('${coverURLs.get(withCover.id)}')`;
+  const k = 'art:projet:' + name, a = artURLs.get(k);
+  if (a) return `url('${a}')`;
+  queueArt(k); return gradient(hashHue(name));
 }
 function collectionTracks(v) {
   if (!v) return [];
@@ -1215,7 +1306,7 @@ function renderLibrary() {
     const playing = sameSrc(queueSrc, it) && E.playing;
     const dur = it.list.reduce((s, t) => s + (t.duration || 0), 0);
     return `<div class="card${sameSrc(queueSrc, it) ? ' is-current' : ''}" data-i="${i}" style="animation-delay:${Math.min(i, 10) * 35}ms">
-      <div class="cover" style="background-image:${groupCover(it.list, it.name)}">${it.list.length ? `<button class="cplay" aria-label="Lire">${playing ? PAUSE_SVG : PLAY_SVG}</button>` : ''}</div>
+      <div class="cover"${it.list.some(t => coverURLs.has(t.id)) ? '' : ` data-art="${esc('art:projet:' + it.name)}"`} style="background-image:${groupCover(it.list, it.name)}">${it.list.length ? `<button class="cplay" aria-label="Lire">${playing ? PAUSE_SVG : PLAY_SVG}</button>` : ''}</div>
       <div class="ct"><div><h3>${esc(it.name)}</h3><p>${it.smart ? '<span class="tag">AUTO</span>' : ''}${it.list.length} son${it.list.length > 1 ? 's' : ''}${dur ? ' · ' + fmt(dur) : ''}</p></div></div>
     </div>`;
   });
@@ -1260,7 +1351,7 @@ function rowHTML(t, i, showProject) {
   const cur = current && current.id === t.id;
   const sub = [showProject ? t.project : '', t.bpm ? t.bpm + ' BPM' : '', t.key, fmt(t.duration)].filter(Boolean).join(' · ');
   return `<div class="row${cur ? ' cur' : ''}" data-id="${t.id}" data-i="${i}" style="animation-delay:${Math.min(i, 12) * 20}ms">
-    <div class="rc" style="background-image:${coverCSS(t)}"></div>
+    <div class="rc"${artAttr(t)} style="background-image:${coverCSS(t)}"></div>
     <div class="ri"><b>${esc(t.title)}</b><span>${esc(sub)}</span></div>
     <button class="ib radd" aria-label="Ajouter à une playlist">${SVG.add}</button><button class="ib rplay" aria-label="Lire">${cur && E.playing ? PAUSE_SVG : PLAY_SVG}</button></div>`;
 }
@@ -1362,7 +1453,7 @@ function renderCollection() {
       ? `<button class="ib rup" aria-label="Monter">${SVG.up}</button><button class="ib rdown" aria-label="Descendre">${SVG.down}</button><button class="ib rdel" aria-label="Retirer">${SVG.del}</button>`
       : `<button class="ib radd" aria-label="Ajouter à une playlist">${SVG.add}</button><button class="ib rplay" aria-label="Lire">${cur && E.playing ? PAUSE_SVG : PLAY_SVG}</button>`;
     return `<div class="row${cur ? ' cur' : ''}" data-id="${t.id}" data-i="${i}" style="animation-delay:${Math.min(i, 12) * 20}ms">
-      <div class="rc" style="background-image:${coverCSS(t)}"></div>
+      <div class="rc"${artAttr(t)} style="background-image:${coverCSS(t)}"></div>
       <div class="ri"><b>${esc(t.title)}</b><span>${esc(sub)}</span></div>${btns}</div>`;
   }).join('') : `<p class="hint" style="text-align:center;padding:30px 0">${q ? 'Aucun résultat' : isPl ? 'Playlist vide : ajoute des sons avec le bouton ≡+ d\'une liste ou du lecteur.' : 'Aucun son'}</p>`;
 }
@@ -1575,7 +1666,7 @@ function renderPlayer() {
   const t = current, s = t.settings;
   $('#pTitle').textContent = t.title;
   $('#pArtist').textContent = [t.artist, t.project].filter(Boolean).join(' · ') || ' ';
-  $('#discLabel').style.backgroundImage = coverCSS(t);
+  $('#discLabel').style.backgroundImage = coverCSS(t); $('#discLabel').dataset.art = coverURLs.has(t.id) ? '' : artKey(t);
   $('#tDur').textContent = fmt(t.duration);
   renderChips();
   renderLoopUI();
@@ -1594,6 +1685,7 @@ function renderPlayer() {
   // Volume
   $('#resetSpeed').classList.toggle('on', s.rate !== 1);
   $('#revToggle').classList.toggle('on', !!s.reverse && s.mode !== 'tempo');
+  $('#bRev').classList.toggle('on', !!s.reverse && s.mode !== 'tempo');
   $('#resetGain').classList.toggle('on', s.gainDb !== 0);
   const g = $('#rGain'); g.value = s.gainDb; paintRange(g, 0);
   $('#vGain').textContent = fmtNum(s.gainDb) + ' dB';
@@ -1647,6 +1739,7 @@ $('#rRate').addEventListener('input', e => {
 });
 $('#stUp').onclick = () => setRate(Math.pow(2, (Math.round(12 * Math.log2(current.settings.rate)) + 1) / 12));
 $('#stDown').onclick = () => setRate(Math.pow(2, (Math.round(12 * Math.log2(current.settings.rate)) - 1) / 12));
+$('#bRev').onclick = () => $('#revToggle').onclick();
 $('#revToggle').onclick = () => {
   if (current.settings.mode === 'tempo') return toast('Le Reverse marche en mode Varispeed');
   current.settings.reverse = !current.settings.reverse;
@@ -2037,17 +2130,26 @@ let discHeld = false;
   const ang = e => { const r = wrap.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; };
   wrap.addEventListener('pointerdown', e => {
     if (!current || !S.can() || g) return;
-    wrap.setPointerCapture(e.pointerId);
-    g = { id: e.pointerId, last: ang(e), acc: 0, base: angle };
-    S.begin(E.time()); discHeld = true;
+    e.preventDefault(); wrap.setPointerCapture(e.pointerId);
+    g = { id: e.pointerId, last: ang(e), acc: 0, base: angle, hist: [[performance.now(), 0]] };
+    S.begin(E.time()); discHeld = true;            // doigt posé : tape stop
   });
   wrap.addEventListener('pointermove', e => {
     if (!g || e.pointerId !== g.id) return;
     const a = ang(e); let d = a - g.last; if (d > 180) d -= 360; if (d < -180) d += 360;
     g.last = a; g.acc += d;
-    S.drag(g.acc / 360 * TURN_SECONDS);              // un tour de disque = 1,8 s de son
+    const now = performance.now(); g.hist.push([now, g.acc]);
+    while (g.hist.length > 2 && now - g.hist[0][0] > 100) g.hist.shift();
   });
-  const up = e => { if (!g || e.pointerId !== g.id) return; S.release(); discHeld = false; angle = (g.base + g.acc) % 360; g = null; };
+  const up = e => {
+    if (!g || e.pointerId !== g.id) return;
+    // vitesse du lancer (sur les 100 dernières ms) → vitesse de départ du disque, plafonnée à ×2
+    const now = performance.now(), h = g.hist.filter(p => now - p[0] < 120);
+    let w = 0;
+    if (h.length >= 2) { const [t0, a0] = h[0], [t1, a1] = h[h.length - 1]; if (t1 > t0) w = (a1 - a0) / ((t1 - t0) / 1000); }
+    const v0 = clamp(w / (360 / TURN_SECONDS), -2, 2);
+    S.release(v0); discHeld = false; angle = (g.base + g.acc) % 360; g = null;
+  };
   wrap.addEventListener('pointerup', up); wrap.addEventListener('pointercancel', up);
   wrap.addEventListener('pointermove', e => { if (g && e.pointerId === g.id) angle = g.base + g.acc; });
 })();
@@ -2081,7 +2183,7 @@ requestAnimationFrame(frame);
 function updateMini() {
   if (!current) return;
   $('#mini').classList.remove('off');
-  $('#miniCover').style.backgroundImage = coverCSS(current);
+  $('#miniCover').style.backgroundImage = coverCSS(current); $('#miniCover').dataset.art = coverURLs.has(current.id) ? '' : artKey(current);
   $('#miniTitle').textContent = current.title;
   $('#miniArtist').textContent = current.artist || current.project || fmt(current.duration);
 }
@@ -2201,6 +2303,9 @@ if (isIOS && !standalone && !localStorage.getItem('platine.tip')) $('#installTip
 $('#installClose').onclick = () => { localStorage.setItem('platine.tip', '1'); $('#installTip').classList.add('hidden'); };
 
 $('#buildInfo').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · ${BUILD.date}`;
+
+// Sécurité : la page ne doit jamais défiler sur le côté
+[document.documentElement, document.body].forEach(el => el.addEventListener('scroll', () => { if (el.scrollLeft || el.scrollTop) { el.scrollLeft = 0; el.scrollTop = 0; } }));
 
 /* ---------- Démarrage ---------- */
 (async function init() {

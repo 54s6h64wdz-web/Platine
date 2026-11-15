@@ -32,7 +32,9 @@ class ScratchProcessor extends AudioWorkletProcessor {
         if (this.mode === 'hold') { this.anchor = this.pos - d.delta * this.bsr; this.mode = 'follow'; }
         if (this.mode === 'follow') this.target = this.anchor + d.delta * this.bsr;
         break;
-      case 'release': this.mode = 'spin'; this.tv = d.targetRate * k; this.loop = d.loop; this.settled = false; break;
+      case 'release':                                // lancer : vitesse de départ donnée par le geste
+        if (typeof d.v0 === 'number') this.v = d.v0 * k;
+        this.mode = 'spin'; this.tv = d.targetRate * k; this.loop = d.loop; this.settled = false; break;
       case 'target': this.tv = d.targetRate * k; this.settled = false; break;
       case 'stop': this.gTarget = 0; this.stopping = true; break;
     }
@@ -43,9 +45,9 @@ class ScratchProcessor extends AudioWorkletProcessor {
     const sr = sampleRate, bsr = this.bsr;
     const kSlew = 1 - Math.exp(-1 / (sr * 0.08)), follow = 1 / (sr * 0.07), vmax = this.vmax || 2 * bsr / sr;
     const speedingUp = Math.abs(this.tv) > Math.abs(this.v);
-    const kSpin = 1 - Math.exp(-1 / (sr * (speedingUp ? 0.42 : 0.35)));     // inertie du plateau au lâcher
+    const kSpin = 1 - Math.exp(-1 / (sr * (speedingUp ? 0.5 : 0.6)));     // inertie du plateau     // inertie du plateau au lâcher
     const kG = 1 - Math.exp(-1 / (sr * 0.004));
-    const kFric = Math.exp(-1 / (sr * 0.3)), brake = 2.5 * (bsr / sr) / sr;   // perd 2,5× la vitesse normale par seconde
+    const kFric = Math.exp(-1 / (sr * 0.7)), brake = 1.2 * (bsr / sr) / sr;   // en pause : glisse puis s'arrête (≈ 1 s)
     const a = 0.995, L = this.loop, nc = this.ch.length, last = this.len - 2;
     for (let i = 0; i < n; i++) {
       if (this.mode === 'hold') {                     // tape stop
