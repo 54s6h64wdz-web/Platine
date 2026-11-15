@@ -554,7 +554,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 21, version: '3.3', date: '15/11/2026' };
+const BUILD = { n: 22, version: '3.3.1', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -1192,14 +1192,32 @@ async function syncFolder(fileList) {
   let prefix = '';
   for (const { rel, ex } of plan) if (ex && ex.t.src && ex.t.src !== rel && ex.t.src.endsWith('/' + rel)) { prefix = ex.t.src.slice(0, ex.t.src.length - rel.length); break; }
   const srcRoot = prefix ? prefix.split('/')[0] : root;
+  // Dossier parent d'un dossier déjà synchronisé (ex. AUDIO qui contient LOOPS) :
+  // on rattache les sons existants à ce dossier, sans les réimporter.
+  const absorbed = new Set();
+  if (!prefix) for (const { rel, ex } of plan) if (ex && ex.same && ex.t.src && ex.t.src !== rel && rel.endsWith('/' + ex.t.src)) {
+    absorbed.add(ex.t.src.split('/')[0]); ex.t.src = rel; dbPut(ex.t);
+  }
+  if (absorbed.size) { const S1 = loadSources(); absorbed.forEach(r => { if (r !== srcRoot) delete S1[r]; }); saveSources(S1); }
+  const knownRoots = new Set([...Object.keys(loadSources()), ...absorbed]);
+  // Gros import : on prévient avant de copier des Go sur l'iPhone
+  const newBytes = plan.filter(x => !x.ex || !x.ex.same).reduce((a, x) => a + (x.f.size || 0), 0);
+  if (newBytes > 2e9 && !confirm(`${todo} son${todo > 1 ? 's' : ''} à importer, soit ${(newBytes / 1e9).toFixed(1).replace('.', ',')} Go copiés dans l'app sur ton iPhone.\n\nContinuer ?`)) {
+    try { wake && wake.release(); } catch (e) {}
+    syncing = false; $('#btnSync').classList.remove('spin'); renderAll();
+    return toast('Synchro annulée — astuce : synchronise plutôt les sous-dossiers que tu écoutes', 5000);
+  }
   if (todo) toast(`Synchro : ${todo} son${todo > 1 ? 's' : ''} à importer…`, 0);
   let n = 0;
   for (const { f, rel, ex } of plan) {
     seen.add(rel); if (ex) seen.add(ex.t.src);
     if (ex && ex.same) continue;                      // déjà à jour
     n++; toast(`Synchro ${n}/${todo} · ${f.name}`, 0);
-    const full = prefix + rel, parts = full.split('/'), dirs = parts.slice(1, -1);
-    const project = parts.length > 1 ? (dirs.length ? dirs.join(' / ') : parts[0]) : IMPORTS;
+    const full = prefix + rel, parts = full.split('/');
+    // nom du dossier : chemin après le dossier synchronisé le plus proche (ex. AUDIO/LOOPS/2026 S46 → « 2026 S46 »)
+    let cut = 1; for (let i = parts.length - 2; i >= 1; i--) if (knownRoots.has(parts[i])) { cut = i + 1; break; }
+    const dirs = parts.slice(cut, -1);
+    const project = parts.length > 1 ? (dirs.length ? dirs.join(' / ') : parts[cut - 1]) : IMPORTS;
     try {
       if (ex) { await importOne(f, { existing: ex.t }); ex.t.mtime = f.lastModified; await dbPut(ex.t); updated++; }
       else { const t = await importOne(f, { project, src: full }); t.mtime = f.lastModified || Date.now(); await dbPut(t); added++; }
