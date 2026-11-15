@@ -135,7 +135,9 @@ svg{display:block}
 .quick{display:flex;gap:8px;flex-wrap:wrap}
 .quick button{padding:9px 13px;border-radius:10px;background:var(--surface2);font-family:var(--mono);font-size:13px}
 .quick button.accent{background:var(--accent-soft);color:var(--accent)}
-.reset{width:100%;padding:11px;border-radius:12px;color:var(--muted);font-size:14px}
+.ch-r{display:flex;align-items:center;gap:10px}
+.rst{padding:6px 10px;border-radius:9px;background:var(--surface2);color:var(--muted);font-family:var(--mono);font-size:12px;transition:background .2s,color .2s}
+.rst.on{background:var(--accent);color:#1a0b04;font-weight:600}
 
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:38px;background:transparent;touch-action:none}
 input[type=range]:focus{outline:none}
@@ -344,19 +346,18 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
         </div>
         <p class="hint" id="modeHint"></p>
         <div class="ctl">
-          <div class="ctl-head"><span>Vitesse</span><b id="vRate">100 %</b></div>
+          <div class="ctl-head"><span>Vitesse</span><div class="ch-r"><b id="vRate">100 %</b><button class="rst" id="resetSpeed">Réinitialiser</button></div></div>
           <input type="range" id="rRate" min="50" max="150" step="0.1" value="100">
         </div>
         <div class="ctl row">
           <span>Tonalité</span>
           <div class="stepper"><button id="stDown">−1 st</button><b id="vSt">0 st</b><button id="stUp">+1 st</button></div>
         </div>
-        <button class="reset" id="resetSpeed">Remettre à 100 %</button>
       </div>
 
       <div id="tabGain" class="hidden">
         <div class="ctl">
-          <div class="ctl-head"><span>Gain</span><b id="vGain">0.0 dB</b></div>
+          <div class="ctl-head"><span>Gain</span><div class="ch-r"><b id="vGain">0.0 dB</b><button class="rst" id="resetGain">Réinitialiser</button></div></div>
           <input type="range" id="rGain" min="-24" max="12" step="0.5" value="0">
         </div>
         <div class="quick">
@@ -413,7 +414,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 3, version: '2.1', date: '15/11/2026' };
+const BUILD = { n: 4, version: '2.2', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -505,28 +506,35 @@ let currentFile = null;        // fichier prêt pour le bouton Partager
 let repeatMode = 'off';        // off | all | one
 let playerOpen = false;
 
-const audio = new Audio();
+/* =========================================================
+   Moteur audio (build 4)
+   - Varispeed : Web Audio (AudioBufferSourceNode). La vitesse change en
+     temps réel pendant la lecture, sans coupure, et la boucle A-B est
+     précise à l'échantillon près.
+   - Tempo (garde la tonalité) : lecteur natif d'iOS.
+   - Le temps que le son soit décodé (une fraction de seconde), la lecture
+     démarre sur le lecteur natif, puis bascule sans couper sur Web Audio.
+   ========================================================= */
+const audio = new Audio();                 // lecteur natif
 audio.preload = 'auto';
 audio.setAttribute('playsinline', '');
+const keepAlive = new Audio();             // silence en boucle : garde l'app « en lecture » écran verrouillé
+keepAlive.loop = true;
+keepAlive.setAttribute('playsinline', '');
+try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
 
-/* ---------- Moteur de volume (au-delà de 100 %) ----------
-   Le volume natif d'iOS ne peut pas dépasser 100 % : on passe par
-   Web Audio (gain + limiteur) seulement quand c'est nécessaire.      */
-let actx = null, srcNode = null, gainNode = null, limiter = null, limiting = null;
-function ensureGraph() {
-  if (srcNode) return true;
-  try {
-    const C = window.AudioContext || window.webkitAudioContext;
-    actx = actx || new C();
-    srcNode = actx.createMediaElementSource(audio);
-    gainNode = actx.createGain();
-    limiter = actx.createDynamicsCompressor();
-    limiter.threshold.value = -1; limiter.knee.value = 0; limiter.ratio.value = 20;
-    limiter.attack.value = 0.002; limiter.release.value = 0.12;
-    srcNode.connect(gainNode);
-    route(false);
-    return true;
-  } catch (e) { console.warn('Web Audio indisponible', e); return false; }
+let actx = null, gainNode = null, limiter = null, limiting = null;
+function ctx() {
+  if (actx) return actx;
+  const C = window.AudioContext || window.webkitAudioContext;
+  try { actx = new C({ latencyHint: 'interactive' }); } catch (e) { actx = new C(); }
+  gainNode = actx.createGain();
+  limiter = actx.createDynamicsCompressor();
+  limiter.threshold.value = -1; limiter.knee.value = 0; limiter.ratio.value = 20;
+  limiter.attack.value = 0.002; limiter.release.value = 0.12;
+  route(false);
+  try { actx.createMediaElementSource(audio).connect(gainNode); } catch (e) { console.warn(e); }
+  return actx;
 }
 function route(limit) {
   if (limiting === limit) return;
@@ -536,11 +544,120 @@ function route(limit) {
   else gainNode.connect(actx.destination);
 }
 function applyGain(dbv) {
-  if (dbv === 0 && !srcNode) return;            // reste en lecture native
-  if (!ensureGraph()) return;
-  if (actx.state !== 'running') actx.resume().catch(() => {});
-  route(dbv > 0);
+  ctx(); route(dbv > 0);
   gainNode.gain.setTargetAtTime(Math.pow(10, dbv / 20), actx.currentTime, 0.015);
+}
+
+/* Sons décodés (les 3 derniers restent en mémoire) */
+const decoded = new Map();
+async function getBuffer(t) {
+  if (decoded.has(t.id)) { const b = decoded.get(t.id); decoded.delete(t.id); decoded.set(t.id, b); return b; }
+  const blob = await blobGet('audio:' + t.id);
+  if (!blob) return null;
+  const ab = await blob.arrayBuffer();
+  const buf = await new Promise((res, rej) => { const p = ctx().decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); });
+  decoded.set(t.id, buf);
+  while (decoded.size > 3) decoded.delete(decoded.keys().next().value);
+  return buf;
+}
+
+const E = {
+  kind: 'element',        // 'buffer' (Web Audio) ou 'element' (lecteur natif)
+  playing: false, rate: 1, buf: null, src: null, p0: 0, t0: 0, token: 0,
+  loopA: null, loopB: null, repeatOne: false,
+  onstate() {}, onended() {},
+  duration() { return this.buf ? this.buf.duration : (audio.duration || (current && current.duration) || 0); },
+  loopRange() {
+    if (this.loopA != null && this.loopB != null) return [this.loopA, this.loopB];
+    if (this.repeatOne && this.buf) return [0, this.buf.duration];
+    return null;
+  },
+  time() {
+    if (this.kind === 'element') return audio.currentTime || 0;
+    if (!this.playing) return this.p0;
+    let p = this.p0 + (actx.currentTime - this.t0) * this.rate;
+    const L = this.loopRange();
+    if (L && this.p0 <= L[1] + 0.005 && p >= L[1]) p = L[0] + ((p - L[0]) % (L[1] - L[0]));
+    return Math.min(p, this.duration());
+  },
+  startBuffer(at) {
+    this.stopSource();
+    const s = actx.createBufferSource();
+    s.buffer = this.buf; s.playbackRate.value = this.rate;
+    const L = this.loopRange();
+    if (L) { s.loop = true; s.loopStart = L[0]; s.loopEnd = L[1]; }
+    s.connect(gainNode);
+    const tok = ++this.token;
+    s.onended = () => { if (tok === this.token && this.playing) { this.playing = false; this.p0 = 0; this.src = null; this.onstate(); this.onended(); } };
+    at = clamp(at, 0, Math.max(0, this.buf.duration - 0.001));
+    s.start(0, at);
+    this.src = s; this.p0 = at; this.t0 = actx.currentTime;
+  },
+  stopSource() {
+    if (!this.src) return;
+    this.token++;
+    try { this.src.stop(); } catch (e) {}
+    try { this.src.disconnect(); } catch (e) {}
+    this.src = null;
+  },
+  play() {
+    ctx(); if (actx.state !== 'running') actx.resume().catch(() => {});
+    keepAlive.play().catch(() => {});
+    if (this.kind === 'buffer') {
+      if (!this.playing) { this.playing = true; this.startBuffer(this.p0 >= this.buf.duration - 0.02 ? 0 : this.p0); }
+    } else {
+      this.playing = true;
+      const p = audio.play(); if (p && p.catch) p.catch(err => console.warn(err));
+    }
+    this.onstate();
+  },
+  pause() {
+    if (this.kind === 'buffer') { if (this.playing) { this.p0 = this.time(); this.stopSource(); } }
+    else audio.pause();
+    this.playing = false; keepAlive.pause(); this.onstate();
+  },
+  seek(t) {
+    t = clamp(t, 0, this.duration());
+    if (this.kind === 'buffer') { if (this.playing) this.startBuffer(t); else this.p0 = t; }
+    else audio.currentTime = t;
+  },
+  /* Vitesse en temps réel : on règle directement la vitesse de lecture de Web Audio */
+  setRate(r) {
+    if (this.kind === 'buffer' && this.playing) { this.p0 = this.time(); this.t0 = actx.currentTime; }
+    this.rate = r;
+    if (this.src) this.src.playbackRate.setValueAtTime(r, actx.currentTime);
+  },
+  refreshLoop() { if (this.kind === 'buffer' && this.playing) this.startBuffer(this.time()); audio.loop = this.repeatOne; },
+  toBuffer(buf) {
+    const pos = this.kind === 'element' ? (audio.currentTime || 0) : this.time(), was = this.playing;
+    this.buf = buf;
+    if (this.kind === 'buffer') return;
+    this.kind = 'buffer'; audio.pause(); this.p0 = pos;
+    if (was) { ctx(); this.startBuffer(pos); }
+  },
+  toElement() {
+    if (this.kind === 'element') return;
+    const pos = this.time(), was = this.playing;
+    this.stopSource(); this.kind = 'element';
+    audio.currentTime = pos;
+    if (was) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
+  },
+  reset() { this.stopSource(); audio.pause(); this.playing = false; this.p0 = 0; this.buf = null; this.kind = 'element'; }
+};
+// Le lecteur natif peut être mis en pause par iOS (appel, autre app…)
+audio.addEventListener('play',  () => { if (E.kind === 'element' && !E.playing) { E.playing = true; E.onstate(); } });
+audio.addEventListener('pause', () => { if (E.kind === 'element' && E.playing && !audio.ended) { E.playing = false; E.onstate(); } });
+audio.addEventListener('ended', () => { if (E.kind === 'element') { E.playing = false; E.onstate(); E.onended(); } });
+
+const wantBuffer = () => current && current.settings.mode !== 'tempo';
+/* Choisit le bon moteur selon le mode (Varispeed → Web Audio, Tempo → natif) */
+function syncEngine() {
+  if (!current) return;
+  if (!wantBuffer()) return E.toElement();
+  const t = current;
+  if (decoded.has(t.id)) return E.toBuffer(decoded.get(t.id));
+  getBuffer(t).then(buf => { if (buf && current && current.id === t.id && wantBuffer()) E.toBuffer(buf); })
+    .catch(err => console.warn('Décodage impossible, lecteur natif utilisé', err));
 }
 
 function applyRate() {
@@ -549,12 +666,13 @@ function applyRate() {
   audio.preservesPitch = keep; audio.webkitPreservesPitch = keep; audio.mozPreservesPitch = keep;
   audio.defaultPlaybackRate = s.rate;
   audio.playbackRate = s.rate;
+  E.setRate(s.rate);
 }
 audio.addEventListener('loadedmetadata', () => { if (current) applyRate(); });
 
 /* ---------- Déblocage audio iOS au premier toucher ---------- */
 function silentURL() {
-  const sr = 8000, n = 800, b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+  const sr = 8000, n = 8000, b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
   const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
   w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt ');
   v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
@@ -562,9 +680,12 @@ function silentURL() {
   w(36, 'data'); v.setUint32(40, n * 2, true);
   return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
 }
+keepAlive.src = silentURL();
 function unlock() {
   document.removeEventListener('touchend', unlock, true);
   document.removeEventListener('click', unlock, true);
+  try { ctx(); actx.resume().catch(() => {}); } catch (e) {}
+  keepAlive.play().then(() => { if (!E.playing) keepAlive.pause(); }).catch(() => {});
   if (!audio.src) { audio.src = silentURL(); audio.play().then(() => audio.pause()).catch(() => {}); }
 }
 document.addEventListener('touchend', unlock, true);
@@ -758,7 +879,7 @@ function renderLibrary() {
     libItems = playlists.slice().sort((a, b) => b.created - a.created).map(p => ({ kind: 'playlist', key: p.id, name: p.name, list: collectionTracks({ kind: 'playlist', key: p.id }) }));
   }
   const cards = libItems.map((it, i) => {
-    const playing = sameSrc(queueSrc, it) && !audio.paused;
+    const playing = sameSrc(queueSrc, it) && E.playing;
     const dur = it.list.reduce((s, t) => s + (t.duration || 0), 0);
     return `<div class="card${sameSrc(queueSrc, it) ? ' is-current' : ''}" data-i="${i}" style="animation-delay:${Math.min(i, 10) * 35}ms">
       <div class="cover" style="background-image:${groupCover(it.list, it.name)}">${it.list.length ? `<button class="cplay" aria-label="Lire">${playing ? PAUSE_SVG : PLAY_SVG}</button>` : ''}</div>
@@ -814,7 +935,7 @@ function renderCollection() {
     const sub = [t.bpm ? t.bpm + ' BPM' : '', t.key, fmt(t.duration)].filter(Boolean).join(' · ');
     const btns = editOrder
       ? `<button class="ib rup" aria-label="Monter">${SVG.up}</button><button class="ib rdown" aria-label="Descendre">${SVG.down}</button><button class="ib rdel" aria-label="Retirer">${SVG.del}</button>`
-      : `<button class="ib radd" aria-label="Ajouter à une playlist">${SVG.add}</button><button class="ib rplay" aria-label="Lire">${cur && !audio.paused ? PAUSE_SVG : PLAY_SVG}</button>`;
+      : `<button class="ib radd" aria-label="Ajouter à une playlist">${SVG.add}</button><button class="ib rplay" aria-label="Lire">${cur && E.playing ? PAUSE_SVG : PLAY_SVG}</button>`;
     return `<div class="row${cur ? ' cur' : ''}" data-id="${t.id}" data-i="${i}" style="animation-delay:${Math.min(i, 12) * 20}ms">
       <div class="rc" style="background-image:${coverCSS(t)}"></div>
       <div class="ri"><b>${esc(t.title)}</b><span>${esc(sub)}</span></div>${btns}</div>`;
@@ -915,12 +1036,12 @@ function refreshCardIcons() {
   document.querySelectorAll('#grid .card[data-i]').forEach(c => {
     const it = libItems[+c.dataset.i], b = c.querySelector('.cplay');
     c.classList.toggle('is-current', sameSrc(queueSrc, it));
-    if (b) b.innerHTML = sameSrc(queueSrc, it) && !audio.paused ? PAUSE_SVG : PLAY_SVG;
+    if (b) b.innerHTML = sameSrc(queueSrc, it) && E.playing ? PAUSE_SVG : PLAY_SVG;
   });
   document.querySelectorAll('#cList .row').forEach(r => {
     const cur = current && r.dataset.id === current.id, b = r.querySelector('.rplay');
     r.classList.toggle('cur', !!cur);
-    if (b) b.innerHTML = cur && !audio.paused ? PAUSE_SVG : PLAY_SVG;
+    if (b) b.innerHTML = cur && E.playing ? PAUSE_SVG : PLAY_SVG;
   });
 }
 function renderAll() { renderLibrary(); if (view) renderCollection(); }
@@ -934,24 +1055,25 @@ async function loadTrack(t, autoplay) {
     if (!b) return toast('Fichier introuvable');
     url = URL.createObjectURL(b); audioURLs.set(t.id, url);
   }
+  E.reset();
+  E.rate = t.settings.rate;
+  E.loopA = t.loopA ?? null; E.loopB = t.loopB ?? null;
+  E.repeatOne = repeatMode === 'one';
   audio.src = url;
-  audio.loop = repeatMode === 'one';
+  audio.loop = E.repeatOne;
   applyRate();
   applyGain(t.settings.gainDb);
+  if (wantBuffer() && decoded.has(t.id)) { E.kind = 'buffer'; E.buf = decoded.get(t.id); }
   if (autoplay) play();
+  syncEngine();
   renderPlayer(); refreshCardIcons(); updateMini(); updateMediaSession();
   currentFile = null;
   blobGet('audio:' + t.id).then(b => {
     if (b && current && current.id === t.id) currentFile = new File([b], t.fileName || (t.title + '.wav'), { type: b.type || 'audio/wav' });
   });
 }
-function play() {
-  if (!current) return;
-  if (actx && actx.state !== 'running') actx.resume().catch(() => {});
-  const p = audio.play();
-  if (p && p.catch) p.catch(err => console.warn(err));
-}
-function togglePlay() { if (!current) return; audio.paused ? play() : audio.pause(); }
+function play() { if (current) E.play(); }
+function togglePlay() { if (!current) return; E.playing ? E.pause() : E.play(); }
 /* File de lecture : l'ordre du projet ou de la playlist d'où la lecture est partie */
 function playFrom(src, t) {
   queueSrc = { kind: src.kind, key: src.key };
@@ -972,18 +1094,21 @@ function stepTrack(dir) {
   if (i < 0) i = q.length - 1;
   loadTrack(byId(q[i]), true);
 }
-function prev() { if (audio.currentTime > 3) audio.currentTime = 0; else stepTrack(-1); }
+function prev() { if (E.time() > 3) E.seek(0); else stepTrack(-1); }
 function next() { stepTrack(1); }
 
-audio.addEventListener('ended', () => {
+E.onended = () => {
+  if (!current) return;
   const q = getQueue();
   if (q.indexOf(current.id) < q.length - 1 || repeatMode === 'all') next();
-});
-['play', 'pause'].forEach(ev => audio.addEventListener(ev, () => {
-  document.body.classList.toggle('playing', !audio.paused);
+  else E.seek(0);
+};
+E.onstate = () => {
+  document.body.classList.toggle('playing', E.playing);
   refreshCardIcons();
-  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = audio.paused ? 'paused' : 'playing';
-}));
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = E.playing ? 'playing' : 'paused';
+  updatePosition();
+};
 audio.addEventListener('timeupdate', checkLoop);
 
 /* ---------- Écran du lecteur ---------- */
@@ -1037,6 +1162,8 @@ function renderPlayer() {
   $('#vSt').textContent = vari ? fmtNum(st, Math.abs(st - Math.round(st)) < 0.02 ? 0 : 2) + ' st' : 'fixe';
   $('#stDown').disabled = $('#stUp').disabled = !vari;
   // Volume
+  $('#resetSpeed').classList.toggle('on', s.rate !== 1);
+  $('#resetGain').classList.toggle('on', s.gainDb !== 0);
   const g = $('#rGain'); g.value = s.gainDb; paintRange(g, 0);
   $('#vGain').textContent = fmtNum(s.gainDb) + ' dB';
   document.querySelectorAll('.quick [data-g]').forEach(b => b.classList.toggle('accent', +b.dataset.g === s.gainDb));
@@ -1087,10 +1214,11 @@ $('#rRate').addEventListener('input', e => {
 });
 $('#stUp').onclick = () => setRate(Math.pow(2, (Math.round(12 * Math.log2(current.settings.rate)) + 1) / 12));
 $('#stDown').onclick = () => setRate(Math.pow(2, (Math.round(12 * Math.log2(current.settings.rate)) - 1) / 12));
-$('#resetSpeed').onclick = () => setRate(1);
+$('#resetSpeed').onclick = () => { setRate(1); toast('Vitesse remise à 100 %'); };
+$('#rRate').addEventListener('dblclick', () => setRate(1));
 $('#modeSeg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  current.settings.mode = b.dataset.mode; applyRate(); renderPlayer(); saveSoon();
+  current.settings.mode = b.dataset.mode; applyRate(); syncEngine(); renderPlayer(); saveSoon();
 });
 
 /* ---------- Réglages : volume ---------- */
@@ -1099,6 +1227,7 @@ function setGain(dbv) {
   applyGain(current.settings.gainDb); renderPlayer(); saveSoon();
 }
 $('#rGain').addEventListener('input', e => setGain(+e.target.value));
+$('#resetGain').onclick = () => { setGain(0); toast('Volume remis à 0 dB'); };
 document.querySelectorAll('.quick [data-g]').forEach(b => b.onclick = () => setGain(+b.dataset.g));
 $('#bNorm').onclick = () => { setGain(-0.3 - current.peakDb); toast(`Normalisé : ${fmtNum(current.settings.gainDb)} dB`); };
 
@@ -1114,22 +1243,22 @@ $('#bPrev').onclick = prev;
 $('#bNext').onclick = next;
 $('#bRepeat').onclick = () => {
   repeatMode = { off: 'all', all: 'one', one: 'off' }[repeatMode];
-  audio.loop = repeatMode === 'one';
+  E.repeatOne = repeatMode === 'one'; E.refreshLoop();
   toast({ off: 'Répétition désactivée', all: 'Répéter tous les sons', one: 'Répéter ce son' }[repeatMode]);
   renderPlayer();
 };
 $('#bLoop').onclick = () => {
-  const t = current, now = audio.currentTime;
+  const t = current, now = E.time();
   if (t.loopA == null) { t.loopA = now; toast('Point A posé — appuie encore pour B'); }
   else if (t.loopB == null) {
     if (now <= t.loopA + 0.2) { t.loopB = t.loopA; t.loopA = Math.max(0, now); if (t.loopB - t.loopA < 0.2) { t.loopA = t.loopB = null; } }
     else t.loopB = now;
-    if (t.loopA != null) { audio.currentTime = t.loopA; toast('Boucle A-B active'); }
-  } else { t.loopA = t.loopB = null; toast('Boucle désactivée'); }
+    if (t.loopA != null) { E.loopA = t.loopA; E.loopB = t.loopB; E.seek(t.loopA); toast('Boucle A-B active'); }
+  } else { t.loopA = t.loopB = null; E.loopA = E.loopB = null; E.refreshLoop(); toast('Boucle désactivée'); }
   renderPlayer();
 };
 function checkLoop() {
-  if (current && current.loopB != null && audio.currentTime >= current.loopB) audio.currentTime = current.loopA;
+  if (E.kind === 'element' && current && current.loopB != null && E.time() >= current.loopB) E.seek(current.loopA);
 }
 $('#bShare').onclick = () => {
   if (!currentFile) return toast('Fichier en préparation, réessaie');
@@ -1152,8 +1281,8 @@ function drawWave() {
   const w = cv.width, h = cv.height;
   g2.clearRect(0, 0, w, h);
   if (!current || !w) return;
-  const peaks = current.peaks || [], dur = current.duration || audio.duration || 1;
-  const t = seeking ? seekT : audio.currentTime, px = t / dur * w;
+  const peaks = current.peaks || [], dur = current.duration || E.duration() || 1;
+  const t = seeking ? seekT : E.time(), px = t / dur * w;
   if (current.loopA != null) {
     const a = current.loopA / dur * w, b = current.loopB != null ? current.loopB / dur * w : a + 2 * dpr;
     g2.fillStyle = 'rgba(255,107,53,.14)'; g2.fillRect(a, 0, b - a, h);
@@ -1171,10 +1300,10 @@ function drawWave() {
 }
 (() => {
   const box = $('#waveBox');
-  const timeAt = e => { const r = box.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1) * (current.duration || audio.duration || 0); };
+  const timeAt = e => { const r = box.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1) * (current.duration || E.duration() || 0); };
   box.addEventListener('pointerdown', e => { if (!current) return; seeking = true; seekT = timeAt(e); box.setPointerCapture(e.pointerId); });
   box.addEventListener('pointermove', e => { if (seeking) seekT = timeAt(e); });
-  const end = () => { if (!seeking) return; seeking = false; audio.currentTime = seekT; updatePosition(); };
+  const end = () => { if (!seeking) return; seeking = false; E.seek(seekT); updatePosition(); };
   box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
 })();
 
@@ -1182,16 +1311,16 @@ function drawWave() {
 let angle = 0, vel = 0, last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  const target = audio.paused || !current ? 0 : 360 / TURN_SECONDS * audio.playbackRate;
+  const target = !E.playing || !current ? 0 : 360 / TURN_SECONDS * E.rate;
   vel += (target - vel) * Math.min(1, dt * (target > vel ? 3.2 : 2.2));   // démarrage / freinage doux
   if (Math.abs(vel) < 0.05) vel = 0;
   angle = (angle + vel * dt) % 360;
   if (playerOpen) {
     $('#disc').style.transform = `rotate(${angle}deg)`;
     drawWave();
-    $('#tCur').textContent = fmt(seeking ? seekT : audio.currentTime);
+    $('#tCur').textContent = fmt(seeking ? seekT : E.time());
   }
-  if (current) $('#miniProg').style.width = (audio.currentTime / (current.duration || 1) * 100) + '%';
+  if (current) $('#miniProg').style.width = (E.time() / (current.duration || 1) * 100) + '%';
   $('#miniCover').style.transform = `rotate(${angle}deg)`;
   checkLoop();
   requestAnimationFrame(frame);
@@ -1219,16 +1348,16 @@ function updateMediaSession() {
 }
 function updatePosition() {
   if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState || !current) return;
-  try { navigator.mediaSession.setPositionState({ duration: current.duration, playbackRate: audio.playbackRate, position: Math.min(audio.currentTime, current.duration) }); } catch (e) {}
+  try { navigator.mediaSession.setPositionState({ duration: current.duration, playbackRate: E.rate, position: Math.min(E.time(), current.duration) }); } catch (e) {}
 }
 if ('mediaSession' in navigator) {
   const ms = navigator.mediaSession, set = (a, f) => { try { ms.setActionHandler(a, f); } catch (e) {} };
-  set('play', play); set('pause', () => audio.pause());
+  set('play', play); set('pause', () => E.pause());
   set('previoustrack', prev); set('nexttrack', next);
-  set('seekto', d => { audio.currentTime = d.seekTime; updatePosition(); });
-  set('seekbackward', d => { audio.currentTime = Math.max(0, audio.currentTime - (d.seekOffset || 10)); updatePosition(); });
-  set('seekforward', d => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (d.seekOffset || 10)); updatePosition(); });
-  ['play', 'seeked', 'ratechange'].forEach(ev => audio.addEventListener(ev, updatePosition));
+  set('seekto', d => { E.seek(d.seekTime); updatePosition(); });
+  set('seekbackward', d => { E.seek(E.time() - (d.seekOffset || 10)); updatePosition(); });
+  set('seekforward', d => { E.seek(E.time() + (d.seekOffset || 10)); updatePosition(); });
+  audio.addEventListener('seeked', updatePosition);
 }
 
 /* ---------- Modifier un son ---------- */
@@ -1286,7 +1415,7 @@ $('#eDelete').onclick = async () => {
 };
 async function deleteTrack(t) {
   if (current && current.id === t.id) {
-    audio.pause(); audio.removeAttribute('src'); audio.load(); current = null;
+    E.reset(); keepAlive.pause(); audio.removeAttribute('src'); audio.load(); current = null; E.onstate();
     closePlayer(); $('#mini').classList.add('off');
   }
   await dbDel(t.id); await blobDel('audio:' + t.id); await blobDel('cover:' + t.id);
