@@ -244,8 +244,9 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 /* ---------- App Mac ---------- */
 html:not(.desktop) .desk-only{display:none!important}
 .desktop #library,.desktop #collection{padding-top:46px}
-.desktop .lib-head{-webkit-app-region:drag}
-.desktop .lib-head button,.desktop .lib-head a{-webkit-app-region:no-drag}
+#dragbar{display:none}
+.desktop #dragbar{display:block;position:fixed;top:0;left:0;right:0;height:40px;z-index:15;-webkit-app-region:drag}
+.desktop button,.desktop input,.desktop a,.desktop .modal-card,.desktop .seg{-webkit-app-region:no-drag}
 .desktop ::-webkit-scrollbar{width:10px}.desktop ::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:10px;border:3px solid var(--bg)}
 .desktop .grid:not(.is-list):not(.is-tiles){grid-template-columns:repeat(auto-fill,minmax(168px,1fr))}
 .desktop .grid.is-tiles{grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
@@ -298,6 +299,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <body>
 
 <!-- ===== Bibliothèque ===== -->
+<div id="dragbar"></div>
 <section id="library">
   <header class="lib-head">
     <div class="brand"><h1>Platine<span>.</span></h1><small>by genetic</small></div>
@@ -596,7 +598,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 25, version: '3.4.1', date: '15/11/2026' };
+const BUILD = { n: 26, version: '3.4.2', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.

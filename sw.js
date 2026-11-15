@@ -1,6 +1,6 @@
 // Service worker : permet à Platine de s'ouvrir même hors connexion.
 // À chaque mise à jour : même numéro que BUILD dans index.html et que version.json.
-const CACHE = 'platine-build-25';
+const CACHE = 'platine-build-26';
 const ASSETS = ['./', './index.html', './manifest.webmanifest',
   './scratch-worklet.js', './regle.html', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 
