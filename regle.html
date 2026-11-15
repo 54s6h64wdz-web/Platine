@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f0f10">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Platine · Règle</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#0f0f10;color:#f4f4f5;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px}
+  body{min-height:100%}
+  /* Cadres de mesure : chaque bordure colorée montre la hauteur d'une unité CSS */
+  .probe{position:fixed;left:0;top:0;pointer-events:none}
+  #pFixed{right:0;bottom:0;border:3px solid #ff3b30}
+  #pVH{width:12px;left:auto;right:0;height:100vh;background:rgba(10,132,255,.35);border-bottom:3px solid #0a84ff}
+  #pDVH{width:12px;left:auto;right:14px;height:100dvh;background:rgba(48,209,88,.35);border-bottom:3px solid #30d158}
+  #pSVH{width:12px;left:auto;right:28px;height:100svh;background:rgba(255,214,10,.35);border-bottom:3px solid #ffd60a}
+  #pLVH{width:12px;left:auto;right:42px;height:100lvh;background:rgba(191,90,242,.35);border-bottom:3px solid #bf5af2}
+  #pSafe{right:0;bottom:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  #pSafe i{display:block;width:100%;height:100%;outline:2px dashed #ff9f0a;outline-offset:-2px}
+  .zone{position:fixed;left:0;right:0;background:repeating-linear-gradient(45deg,rgba(255,159,10,.18) 0 6px,transparent 6px 12px);pointer-events:none}
+  #zTop{top:0;height:env(safe-area-inset-top)}
+  #zBot{bottom:0;height:env(safe-area-inset-bottom)}
+  /* Règles : graduations tous les 10 px, chiffres tous les 100 px */
+  #rulerL,#rulerB{position:fixed;pointer-events:none}
+  #rulerL{left:0;top:0;bottom:0;width:34px}
+  #rulerB{left:0;right:0;bottom:0;height:22px}
+  .tick{position:absolute;background:#8c8c92}
+  .lab{position:absolute;color:#f4f4f5;font-size:9px}
+  main{position:relative;z-index:2;padding:calc(env(safe-area-inset-top) + 10px) 64px calc(env(safe-area-inset-bottom) + 40px) 44px}
+  h1{font-size:16px;margin-bottom:8px;font-family:-apple-system,system-ui,sans-serif}
+  .legend span{display:inline-block;margin:0 10px 6px 0}
+  .legend b{display:inline-block;width:10px;height:10px;margin-right:4px;vertical-align:-1px}
+  table{border-collapse:collapse;margin:10px 0;width:100%}
+  tr{display:block;padding:6px 0;border-bottom:1px solid #2e2e32}
+  td{display:block}
+  td:first-child{color:#8c8c92;font-size:11px}
+  td:last-child{font-size:14px;word-break:break-word;margin-top:2px}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  button,a.btn{font:inherit;font-size:14px;padding:12px 14px;border-radius:12px;border:0;background:#242427;color:#f4f4f5;text-decoration:none}
+  button.accent{background:#ff6b35;color:#1a0b04;font-weight:700}
+  #ok{color:#30d158;margin-top:8px;min-height:16px}
+</style>
+</head>
+<body>
+<div class="probe" id="pFixed"></div>
+<div class="probe" id="pVH"></div>
+<div class="probe" id="pDVH"></div>
+<div class="probe" id="pSVH"></div>
+<div class="probe" id="pLVH"></div>
+<div class="probe" id="pSafe"><i></i></div>
+<div class="zone" id="zTop"></div>
+<div class="zone" id="zBot"></div>
+<div id="rulerL"></div>
+<div id="rulerB"></div>
+
+<main>
+  <h1>Règle d'écran Platine</h1>
+  <div class="legend">
+    <span><b style="background:#ff3b30"></b>plein écran (fixed)</span>
+    <span><b style="background:#0a84ff"></b>100vh</span>
+    <span><b style="background:#30d158"></b>100dvh</span>
+    <span><b style="background:#ffd60a"></b>100svh</span>
+    <span><b style="background:#bf5af2"></b>100lvh</span>
+    <span><b style="background:#ff9f0a"></b>zones réservées iOS</span>
+  </div>
+  <table id="out"></table>
+  <div class="btns">
+    <button class="accent" id="copy">Copier les mesures</button>
+    <a class="btn" href="./">← Retour à Platine</a>
+  </div>
+  <p id="ok"></p>
+  <p style="color:#8c8c92;margin-top:10px;line-height:1.5">Ouvre cette page depuis l'app installée (lien « Règle » en bas de l'accueil), puis colle les mesures dans la conversation avec Claude. Une capture d'écran aide aussi.</p>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+function ruler() {
+  const L = $('#rulerL'), B = $('#rulerB'), H = Math.max(innerHeight, screen.height), W = innerWidth;
+  let l = '', b = '';
+  for (let y = 0; y <= H; y += 10) {
+    const big = y % 100 === 0, mid = y % 50 === 0;
+    l += `<i class="tick" style="top:${y}px;left:0;height:1px;width:${big ? 22 : mid ? 14 : 7}px"></i>`;
+    if (big) l += `<span class="lab" style="top:${y + 2}px;left:2px">${y}</span>`;
+  }
+  for (let x = 0; x <= W; x += 10) {
+    const big = x % 100 === 0, mid = x % 50 === 0;
+    b += `<i class="tick" style="left:${x}px;bottom:0;width:1px;height:${big ? 16 : mid ? 10 : 5}px"></i>`;
+    if (big) b += `<span class="lab" style="left:${x + 2}px;bottom:10px">${x}</span>`;
+  }
+  L.innerHTML = l; B.innerHTML = b;
+}
+function measure() {
+  const cs = getComputedStyle($('#pSafe')), vv = window.visualViewport;
+  const r = {
+    'Mode': (navigator.standalone || matchMedia('(display-mode: standalone)').matches) ? 'app installée (standalone)' : 'navigateur',
+    'Écran (screen)': `${screen.width} × ${screen.height}  (dispo ${screen.availWidth} × ${screen.availHeight})`,
+    'Densité (devicePixelRatio)': devicePixelRatio,
+    'Fenêtre (innerWidth × innerHeight)': `${innerWidth} × ${innerHeight}`,
+    'documentElement.client': `${document.documentElement.clientWidth} × ${document.documentElement.clientHeight}`,
+    'visualViewport': vv ? `${Math.round(vv.width)} × ${Math.round(vv.height)} (décalage haut ${Math.round(vv.offsetTop)})` : '—',
+    'Plein écran fixed (rouge)': `${$('#pFixed').offsetWidth} × ${$('#pFixed').offsetHeight}`,
+    '100vh (bleu)': $('#pVH').offsetHeight,
+    '100dvh (vert)': $('#pDVH').offsetHeight,
+    '100svh (jaune)': $('#pSVH').offsetHeight,
+    '100lvh (violet)': $('#pLVH').offsetHeight,
+    'Zone réservée haut': cs.paddingTop,
+    'Zone réservée bas': cs.paddingBottom,
+    'Zone réservée gauche / droite': `${cs.paddingLeft} / ${cs.paddingRight}`,
+    'Orientation': (screen.orientation && screen.orientation.type) || (innerWidth > innerHeight ? 'paysage' : 'portrait'),
+    'Navigateur': navigator.userAgent
+  };
+  $('#out').innerHTML = Object.entries(r).map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+  return r;
+}
+function refresh() { ruler(); measure(); }
+addEventListener('resize', refresh);
+addEventListener('orientationchange', () => setTimeout(refresh, 300));
+if (window.visualViewport) visualViewport.addEventListener('resize', refresh);
+refresh(); setTimeout(refresh, 500);
+$('#copy').onclick = async () => {
+  const r = measure();
+  const txt = 'Mesures écran Platine\n' + Object.entries(r).map(([k, v]) => `${k} : ${v}`).join('\n');
+  try { await navigator.clipboard.writeText(txt); $('#ok').textContent = 'Copié ✓ — colle-le dans la conversation'; }
+  catch (e) { $('#ok').textContent = 'Copie impossible : fais une capture d\'écran'; }
+};
+</script>
+</body>
+</html>
