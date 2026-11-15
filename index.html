@@ -180,6 +180,8 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 .brand{display:flex;flex-direction:column;line-height:1}
 .brand small{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.06em;margin-top:6px}
 .build{text-align:center;font-family:var(--mono);font-size:11px;color:#55555b;margin-top:36px;letter-spacing:.04em}
+.upd{font-family:var(--mono);font-size:11px;color:#77777e;text-decoration:underline;text-underline-offset:3px;padding:6px 2px}
+.upd.new{color:var(--accent);text-decoration:none;font-weight:600}
 .round.spin svg{animation:spin 1s linear infinite}
 .sync-info{font-family:var(--mono);font-size:12px;color:var(--muted);margin:-6px 0 18px}
 .lib-seg{margin-bottom:20px}
@@ -242,7 +244,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
     <button id="installClose" aria-label="Fermer">×</button>
   </div>
   <div id="grid" class="grid"></div>
-  <p class="build" id="buildInfo"></p>
+  <p class="build"><span id="buildInfo"></span> · <button class="upd" id="btnUpdate">Mettre à jour</button></p>
   <div id="empty" class="empty hidden">
     <div class="mini-disc"></div>
     <h2>Aucun son pour l'instant</h2>
@@ -445,7 +447,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 5, version: '2.3', date: '15/11/2026' };
+const BUILD = { n: 6, version: '2.4', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -1692,7 +1694,45 @@ $('#buildInfo').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · 
     console.error(e); toast('Stockage indisponible (navigation privée ?)', 5000); renderLibrary();
   }
 })();
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update().catch(() => {})).catch(() => {});
+}
+
+/* ---------- Mises à jour de l'app ----------
+   version.json (sur GitHub) contient le dernier numéro de build.
+   S'il est plus grand que celui de l'app, le bouton en bas l'indique.
+   « Mettre à jour » vide le cache de l'app et recharge : les sons, playlists
+   et réglages (stockés à part) ne sont pas touchés.                        */
+async function checkUpdate() {
+  if (!location.protocol.startsWith('http')) return;
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const v = await r.json();
+    const b = $('#btnUpdate');
+    if (v.build > BUILD.n) { b.textContent = `Nouvelle version : build ${v.build} → mettre à jour`; b.classList.add('new'); }
+    else { b.textContent = 'Mettre à jour'; b.classList.remove('new'); }
+  } catch (e) {}
+}
+async function forceUpdate() {
+  toast('Mise à jour de l\'app…', 0);
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); }
+  } catch (e) { console.warn(e); }
+  location.replace(location.pathname + '?v=' + Date.now());   // nouvelle adresse = pas de copie en cache
+}
+$('#btnUpdate').onclick = forceUpdate;
+checkUpdate();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  checkUpdate();
+  if (navigator.serviceWorker) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});
+});
+if (location.search.includes('v=')) history.replaceState(null, '', location.pathname);
 </script>
 </body>
 </html>

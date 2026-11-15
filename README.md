@@ -39,7 +39,7 @@ Tes sons restent **sur ton téléphone** : rien n'est envoyé en ligne.
 
 ## Mettre à jour l'app
 
-Remplace les fichiers sur GitHub (au minimum `index.html` et `sw.js`). À chaque mise à jour, augmente le numéro de build dans `index.html` (`BUILD`) et dans `sw.js` (`platine-build-N`). Le numéro s'affiche en bas de l'accueil : c'est le témoin de la version installée.
+Remplace les fichiers sur GitHub (au minimum `index.html` et `sw.js`). À chaque mise à jour, augmente le numéro de build au même chiffre à trois endroits : `index.html` (`BUILD`), `sw.js` (`platine-build-N`) et `version.json`. Le numéro s'affiche en bas de l'accueil. Quand une nouvelle version est en ligne, le lien « Mettre à jour » devient orange : touche-le pour recharger l'app (tes sons ne sont pas touchés).
 Ferme l'app et rouvre-la pour voir la nouvelle version. Tes sons ne sont pas touchés.
 
 ## À savoir
