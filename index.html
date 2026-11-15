@@ -194,6 +194,11 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 .round.spin svg{animation:spin 1s linear infinite}
 .sync-info{font-family:var(--mono);font-size:12px;color:var(--muted);margin:-6px 0 18px}
 .lib-seg{margin-bottom:20px}
+.src-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.src-i{flex:1;min-width:0}
+.src-i b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.src-i span{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.src-row .src-del{color:#ff6b61}
 .p-actions{display:flex;gap:8px;align-items:center}
 .selbar{position:fixed;left:12px;right:12px;bottom:max(12px,calc(var(--sab) - 8px));z-index:12;display:flex;align-items:center;gap:6px;padding:8px;border-radius:18px;background:rgba(34,34,37,.95);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 12px 40px rgba(0,0,0,.5)}
 .selbar #selCount{flex:1;text-align:center;font-family:var(--mono);font-size:13px;color:var(--muted)}
@@ -528,12 +533,22 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
   </div>
 </div>
 
+<!-- ===== Dossiers synchronisés ===== -->
+<div id="sources" class="modal hidden">
+  <div class="modal-card">
+    <div class="m-head"><span style="width:60px"></span><b>Dossiers synchronisés</b><button class="pill accent" id="srcClose">OK</button></div>
+    <div id="srcList"></div>
+    <button class="btn accent" id="srcAdd" style="width:100%;justify-content:center;margin-top:16px">+ Ajouter un dossier</button>
+    <p class="hint" style="margin-top:14px">Sur iPhone, une app web ne peut pas garder l'accès à un dossier : à chaque synchro, choisis le dossier dans Fichiers puis touche « Ouvrir ». Seuls les nouveaux sons et ceux modifiés sont importés. Tu peux aussi choisir un seul sous-dossier (une semaine) : il sera rangé avec son dossier parent.</p>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 19, version: '3.1', date: '15/11/2026' };
+const BUILD = { n: 20, version: '3.2', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -1167,23 +1182,28 @@ async function syncFolder(fileList) {
   const seen = new Set();
   let added = 0, updated = 0, failed = 0, todo = 0, lastErr = '';
   const plan = files.map(f => { const rel = f.webkitRelativePath || f.name; const ex = findExisting(f, rel); if (!ex || !ex.same) todo++; return { f, rel, ex }; });
+  // Sous-dossier d'un dossier déjà synchronisé (ex. une semaine de LOOPS) ? On garde le chemin complet.
+  let prefix = '';
+  for (const { rel, ex } of plan) if (ex && ex.t.src && ex.t.src !== rel && ex.t.src.endsWith('/' + rel)) { prefix = ex.t.src.slice(0, ex.t.src.length - rel.length); break; }
+  const srcRoot = prefix ? prefix.split('/')[0] : root;
   if (todo) toast(`Synchro : ${todo} son${todo > 1 ? 's' : ''} à importer…`, 0);
   let n = 0;
   for (const { f, rel, ex } of plan) {
     seen.add(rel); if (ex) seen.add(ex.t.src);
     if (ex && ex.same) continue;                      // déjà à jour
     n++; toast(`Synchro ${n}/${todo} · ${f.name}`, 0);
-    const parts = rel.split('/'), dirs = parts.slice(1, -1);
-    const project = parts.length > 1 ? (dirs.length ? dirs.join(' / ') : root) : IMPORTS;
+    const full = prefix + rel, parts = full.split('/'), dirs = parts.slice(1, -1);
+    const project = parts.length > 1 ? (dirs.length ? dirs.join(' / ') : parts[0]) : IMPORTS;
     try {
       if (ex) { await importOne(f, { existing: ex.t }); ex.t.mtime = f.lastModified; await dbPut(ex.t); updated++; }
-      else { const t = await importOne(f, { project, src: rel }); t.mtime = f.lastModified || Date.now(); await dbPut(t); added++; }
+      else { const t = await importOne(f, { project, src: full }); t.mtime = f.lastModified || Date.now(); await dbPut(t); added++; }
     } catch (e) { console.error(e); failed++; lastErr = `${f.name} : ${e && (e.message || e.name) || e}`; }
     if (n % 10 === 0) { renderLibrary(); await sleep(30); }          // laisse respirer l'iPhone
   }
   try { wake && wake.release(); } catch (e) {}
-  const missing = tracks.filter(t => t.src && t.src.split('/')[0] === root && !seen.has(t.src)).length;
-  localStorage.setItem('platine.lastSync', JSON.stringify({ at: Date.now(), root }));
+  const missing = prefix ? 0 : tracks.filter(t => t.src && t.src.split('/')[0] === root && !seen.has(t.src)).length;
+  localStorage.setItem('platine.lastSync', JSON.stringify({ at: Date.now(), root: srcRoot }));
+  { const S0 = loadSources(); S0[srcRoot] = { at: Date.now() }; saveSources(S0); }
   syncing = false; $('#btnSync').classList.remove('spin');
   renderAll();
   const msg = [];
@@ -1191,7 +1211,8 @@ async function syncFolder(fileList) {
   if (updated) msg.push(`${updated} mis à jour`);
   if (failed) msg.push(`${failed} illisible${failed > 1 ? 's' : ''}`);
   if (missing) msg.push(`${missing} absent${missing > 1 ? 's' : ''} du dossier`);
-  toast(msg.length ? 'Synchro : ' + msg.join(' · ') : 'Tout est à jour ✓', 3500);
+  const label = prefix ? `« ${root} » (dans « ${srcRoot} »)` : `« ${root} »`;
+  toast(msg.length ? `${label} : ` + msg.join(' · ') : `${label} : tout est à jour ✓`, 4000);
   if (failed) { await sleep(3600); toast('Dernière erreur — ' + lastErr, 8000); }
 }
 
@@ -1338,8 +1359,8 @@ function renderLibrary() {
   const noTracks = tracks.length === 0;
   $('#empty').classList.toggle('hidden', !noTracks);
   $('#libSeg').classList.toggle('hidden', noTracks);
-  const ls = JSON.parse(localStorage.getItem('platine.lastSync') || 'null');
-  $('#syncInfo').textContent = ls ? `Synchro « ${ls.root} » ${ago(ls.at)}` : '';
+  const ls = JSON.parse(localStorage.getItem('platine.lastSync') || 'null'), nSrc = Object.keys(loadSources()).length;
+  $('#syncInfo').textContent = !ls ? '' : nSrc > 1 ? `${nSrc} dossiers synchronisés · dernière synchro ${ago(ls.at)}` : `Synchro « ${ls.root} » ${ago(ls.at)}`;
   $('#allTools').classList.toggle('hidden', noTracks || libTab !== 'all');
   $('#grid').classList.toggle('is-list', libTab === 'all');
   if (noTracks) { $('#grid').innerHTML = ''; return; }
@@ -2554,6 +2575,57 @@ $('#selShare').onclick = async () => {
 $('#cSelect').onclick = () => setSelect(true);
 $('#allSelect').onclick = () => setSelect(true);
 
+
+/* ---------- Plusieurs dossiers synchronisés ---------- */
+function loadSources() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem('platine.sources') || '{}'); } catch (e) {}
+  const ls = JSON.parse(localStorage.getItem('platine.lastSync') || 'null');
+  if (ls && ls.root && !s[ls.root]) s[ls.root] = { at: ls.at };          // ancienne version : un seul dossier
+  return s;
+}
+function saveSources(s) { try { localStorage.setItem('platine.sources', JSON.stringify(s)); } catch (e) {} }
+function sourceList() {
+  const s = loadSources(), roots = new Set(Object.keys(s));
+  for (const t of tracks) if (t.src && t.src.includes('/')) roots.add(t.src.split('/')[0]);
+  return [...roots].map(r => ({ root: r, at: (s[r] && s[r].at) || 0, count: tracks.filter(t => t.src && t.src.split('/')[0] === r).length }))
+    .sort((a, b) => b.at - a.at || natural(a.root, b.root));
+}
+function renderSources() {
+  const L = sourceList();
+  $('#srcList').innerHTML = L.length ? L.map(x => `<div class="src-row" data-root="${esc(x.root)}">
+      <div class="src-i"><b>${esc(x.root)}</b><span>${x.count} son${x.count > 1 ? 's' : ''}${x.at ? ' · synchro ' + ago(x.at) : ''}</span></div>
+      <button class="pill accent src-sync">Synchroniser</button>
+      <button class="ib src-del" aria-label="Retirer">${SVG.del}</button></div>`).join('')
+    : '<p class="hint">Aucun dossier pour l\'instant.</p>';
+}
+let expectRoot = null;
+function pickFolder(root) {
+  if (syncing) return toast('Synchro en cours…');
+  expectRoot = root || null;
+  toast(root ? `Choisis le dossier « ${root} » puis touche « Ouvrir »` : 'Va dans le dossier à ajouter, puis touche « Ouvrir »', 6000);
+  $('#folderInput').click();
+}
+$('#srcClose').onclick = () => $('#sources').classList.add('hidden');
+$('#sources').addEventListener('click', e => { if (e.target.id === 'sources') $('#sources').classList.add('hidden'); });
+$('#srcAdd').onclick = () => { $('#sources').classList.add('hidden'); pickFolder(null); };
+$('#srcList').addEventListener('click', async e => {
+  const row = e.target.closest('.src-row'); if (!row) return;
+  const root = row.dataset.root;
+  if (e.target.closest('.src-sync')) { $('#sources').classList.add('hidden'); return pickFolder(root); }
+  const del = e.target.closest('.src-del'); if (!del) return;
+  if (!del.dataset.armed) {
+    del.dataset.armed = '1'; toast(`Touche encore ✕ pour retirer « ${root} » et ses sons de Platine (tes fichiers ne sont pas touchés)`, 3500);
+    setTimeout(() => { delete del.dataset.armed; }, 3500); return;
+  }
+  const list = tracks.filter(t => t.src && t.src.split('/')[0] === root);
+  for (const t of list) await deleteTrack(t);
+  const s = loadSources(); delete s[root]; saveSources(s);
+  const ls = JSON.parse(localStorage.getItem('platine.lastSync') || 'null');
+  if (ls && ls.root === root) localStorage.removeItem('platine.lastSync');
+  renderSources(); renderAll(); toast(`« ${root} » retiré (${list.length} sons)`);
+});
+
 /* ---------- Divers ---------- */
 let toastTimer;
 function toast(msg, ms = 2200) {
@@ -2562,7 +2634,8 @@ function toast(msg, ms = 2200) {
 }
 $('#btnAdd').onclick = $('#btnAdd2').onclick = () => $('#fileInput').click();
 $('#fileInput').onchange = e => { const f = e.target.files; importFiles(f).finally(() => { e.target.value = ''; }); };
-$('#btnSync').onclick = $('#btnSync2').onclick = () => {
+$('#btnSync').onclick = () => { if (!sourceList().length) return pickFolder(null); renderSources(); $('#sources').classList.remove('hidden'); };
+$('#btnSync2').onclick = () => {
   if (syncing) return toast('Synchro en cours…');
   toast('Va dans ton dossier (ex : LOOPS), puis touche « Ouvrir ». Un gros dossier iCloud peut mettre quelques minutes à arriver.', 6000);
   $('#folderInput').click();
