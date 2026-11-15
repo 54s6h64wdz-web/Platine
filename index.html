@@ -224,6 +224,37 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 .vpill.on{background:var(--text);color:#111}
 .vpill.on small{color:#555}
 .grid.is-list{display:block}
+.grid.is-tiles{grid-template-columns:minmax(0,1fr);gap:10px}
+.ptile{display:flex;align-items:center;gap:14px;padding:10px 12px 10px 10px;border-radius:18px;background:var(--surface);border:1px solid transparent}
+.ptile.is-current{border-color:rgba(255,107,53,.45);background:linear-gradient(90deg,rgba(255,107,53,.10),var(--surface) 60%)}
+.pt-cover{width:76px;height:76px;border-radius:13px;background-size:cover;background-position:center;flex:none;position:relative}
+.pt-body{flex:1;min-width:0}
+.pt-top{display:flex;align-items:baseline;gap:8px}
+.pt-top h3{font-size:17px;font-weight:650;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.pt-top time{font-size:12px;color:var(--muted);flex:none}
+.pt-meta{font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pt-meta b{color:var(--accent);font-weight:600}
+.pt-vers{display:flex;gap:5px;margin-top:7px;overflow:hidden;flex-wrap:nowrap}
+.pt-vers span{font-size:11px;padding:3px 8px;border-radius:999px;background:var(--surface2);color:var(--text);white-space:nowrap;flex:none;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.pt-vers span.more{color:var(--muted)}
+.pt-folder{font-size:12px;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.8}
+.card.ptile .cplay{position:static;width:44px;height:44px;border-radius:50%;flex:none;background:var(--surface2)}
+.card.ptile.is-current .cplay{background:var(--accent);color:#1a0b04}
+/* ---------- App Mac ---------- */
+html:not(.desktop) .desk-only{display:none!important}
+.desktop #library,.desktop #collection{padding-top:46px}
+.desktop .lib-head{-webkit-app-region:drag}
+.desktop .lib-head button,.desktop .lib-head a{-webkit-app-region:no-drag}
+.desktop ::-webkit-scrollbar{width:10px}.desktop ::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:10px;border:3px solid var(--bg)}
+.desktop .grid:not(.is-list):not(.is-tiles){grid-template-columns:repeat(auto-fill,minmax(168px,1fr))}
+.desktop .grid.is-tiles{grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
+.desktop .row:hover,.desktop .ptile:hover{background:var(--surface2)}
+.desktop .row{cursor:default;border-radius:10px;padding-left:6px;padding-right:6px}
+body.wide #library,body.wide #collection{right:460px}
+body.wide #player{left:auto;width:460px;border-left:1px solid var(--line);transform:none!important;visibility:visible;padding-top:30px;overflow-y:auto}
+body.wide #player:not(.open){visibility:hidden}
+body.wide #pClose,body.wide .mini{display:none!important}
+body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{right:0}
 .sm-folders{max-height:240px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:0 10px}
 .card .tag{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:6px;background:var(--accent-soft);color:var(--accent);margin-right:6px;vertical-align:1px}
 .disc-wrap{touch-action:none;cursor:grab}
@@ -349,7 +380,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
     <button class="round" id="pClose" aria-label="Fermer">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
     </button>
-    <div class="p-actions"><button class="round" id="pShare" aria-label="Partager"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button><button class="pill" id="pEdit">Modifier</button></div>
+    <div class="p-actions"><button class="round desk-only" id="pFinder" aria-label="Afficher dans le Finder" title="Afficher dans le Finder"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button><button class="round" id="pShare" aria-label="Partager"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button><button class="pill" id="pEdit">Modifier</button></div>
   </div>
   <div class="p-scroll">
     <div class="p-meta" id="pMeta">
@@ -564,7 +595,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 23, version: '3.3.2', date: '15/11/2026' };
+const BUILD = { n: 24, version: '3.4', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -643,11 +674,30 @@ const natural = (a, b) => a.localeCompare(b, 'fr', { numeric: true, sensitivity:
 function sortProject(list) {
   return [...list].sort((a, b) => (a.src && b.src) ? natural(a.src, b.src) : (a.src ? -1 : b.src ? 1 : b.created - a.created));
 }
+function when(ts) {                                   // date courte pour les tuiles
+  const d = (Date.now() - ts) / 864e5;
+  if (d < 1) return ago(ts).replace('il y a ', '');
+  if (d < 7) return `${Math.floor(d)} j`;
+  const dt = new Date(ts), y = dt.getFullYear() !== new Date().getFullYear();
+  return dt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', ...(y ? { year: '2-digit' } : {}) });
+}
 function ago(ts) {
   const m = Math.round((Date.now() - ts) / 60000);
   if (m < 1) return "à l'instant"; if (m < 60) return `il y a ${m} min`;
   const h = Math.round(m / 60); if (h < 24) return `il y a ${h} h`;
   return `il y a ${Math.round(h / 24)} j`;
+}
+const DESK = window.platineDesktop || null;     // présent seulement dans l'app Mac
+async function audioBlob(t) {
+  if (t.path && DESK) {
+    try {
+      const ab = await DESK.readFile(t.path);
+      const ext = (t.fileName.split('.').pop() || '').toLowerCase();
+      if (t.cloud) { t.cloud = false; dbPut(t); }
+      return new Blob([ab], { type: TYPES[ext] || 'audio/wav' });
+    } catch (e) { console.error(e); toast('Lecture impossible : ' + (e.message || e), 4000); return null; }
+  }
+  return blobGet('audio:' + t.id);
 }
 let current = null;
 const audioURLs = new Map();   // id -> blob: URL du son
@@ -710,7 +760,8 @@ function getBuffer(t) {
 function decodeHit(id) { const b = decoded.get(id); decoded.delete(id); decoded.set(id, b); return b; }
 async function decodeTrack(t) {
   if (decoded.has(t.id)) { const b = decoded.get(t.id); decoded.delete(t.id); decoded.set(t.id, b); return b; }
-  const blob = await blobGet('audio:' + t.id);
+  const u = audioURLs.get(t.id);
+  const blob = u ? await (await fetch(u)).blob() : await audioBlob(t);
   if (!blob) return null;
   const ab = await blob.arrayBuffer();
   const buf = await new Promise((res, rej) => { const p = ctx().decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); });
@@ -1147,6 +1198,17 @@ async function importOne(f, { project = IMPORTS, src = null, existing = null } =
   tracks.unshift(t); audioURLs.set(id, URL.createObjectURL(blob));
   return t;
 }
+function linkFile(f, { project, src }) {
+  const meta = guessMeta(f.name), id = uid();
+  const t = {
+    id, fileName: f.name, title: f.name.replace(/\.[^.]+$/, ''), project, src, path: f.path, cloud: !!f.cloud, pending: true,
+    size: f.size, mtime: f.lastModified || Date.now(), artist: localStorage.getItem('platine.artist') || '',
+    bpm: meta.bpm, key: meta.key, notes: '', created: Date.now(), loop: { ...LOOP_DEFAULT, on: prefs.loopDefault && !!meta.bpm, ...(prefs.downDefault === 'auto' ? { manualDown: false, autoChosen: true } : {}) },
+    duration: 0, peaks: [], peakDb: -0.3, hue: Math.floor(Math.random() * 360), hasCover: false, settings: { ...DEFAULTS }
+  };
+  tracks.unshift(t);
+  return t;
+}
 function askPersist() { try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {} }
 
 /* Bouton + : ajoute des fichiers à la main */
@@ -1172,16 +1234,17 @@ async function importFiles(fileList) {
    Les nouveaux sons sont ajoutés, les sons modifiés mis à jour, le reste ignoré.
    Chaque sous-dossier devient un projet. Rien n'est supprimé automatiquement. */
 let syncing = false;
-async function syncFolder(fileList) {
+async function syncFolder(fileList, opts = {}) {
   stopWait();
+  const D = !!opts.desktop, Q = !!opts.quiet;
+  const say = (m, ms) => { if (!Q) toast(m, ms); };
   const all = [...fileList];
   const tot = all.reduce((a, f) => a + (f.size || 0), 0);
-  slog(`Fichiers reçus d'iOS : ${all.length} (${(tot / 1e9).toFixed(2).replace('.', ',')} Go)` + (all[0] ? ` — dossier « ${(all[0].webkitRelativePath || '').split('/')[0] || '?'} »` : ''));
-  if (!all.length) return toast("Aucun fichier reçu : choisis un dossier puis touche « Ouvrir »", 5000);
+  if (!Q) slog(`${D ? 'Fichiers trouvés' : 'Fichiers reçus d\'iOS'} : ${all.length} (${(tot / 1e9).toFixed(2).replace('.', ',')} Go)` + (all[0] ? ` — dossier « ${(all[0].webkitRelativePath || '').split('/')[0] || '?'} »` : ''));
+  if (!all.length) return say(D ? 'Aucun son dans ce dossier' : "Aucun fichier reçu : choisis un dossier puis touche « Ouvrir »", 5000);
   const files = all.filter(f => AUDIO_EXT.test(f.name) && !f.name.startsWith('.') && !/(^|\/)\./.test(f.webkitRelativePath || ''));
-  toast(`${all.length} fichier${all.length > 1 ? 's' : ''} reçu${all.length > 1 ? 's' : ''} · ${files.length} son${files.length > 1 ? 's' : ''}`, 2500);
-  await sleep(800);
-  if (!files.length) return toast('Aucun son (WAV, MP3, AIFF…) dans ce dossier', 4000);
+  if (!D) { toast(`${all.length} fichier${all.length > 1 ? 's' : ''} reçu${all.length > 1 ? 's' : ''} · ${files.length} son${files.length > 1 ? 's' : ''}`, 2500); await sleep(800); }
+  if (!files.length) return say('Aucun son (WAV, MP3, AIFF…) dans ce dossier', 4000);
   let wake = null;
   try { wake = navigator.wakeLock && await navigator.wakeLock.request('screen'); } catch (e) {}   // écran allumé pendant la synchro
   askPersist();
@@ -1191,7 +1254,9 @@ async function syncFolder(fileList) {
   // au lieu du dossier complet), ou à défaut même nom + même taille.
   const byName = new Map();
   for (const t of tracks) { const k = (t.fileName || '').toLowerCase(); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(t); }
+  const byPath = new Map(tracks.filter(t => t.path).map(t => [t.path, t]));
   const findExisting = (f, rel) => {
+    if (D) { const t = byPath.get(f.path); return t ? { t, same: f.cloud || t.cloud || (t.size === f.size && Math.abs((t.mtime || 0) - f.lastModified) < 3000) } : null; }
     const cands = byName.get(f.name.toLowerCase()) || [];
     const samePath = cands.find(t => t.src && (t.src === rel || t.src.endsWith('/' + rel) || rel.endsWith('/' + t.src)));
     if (samePath) return { t: samePath, same: samePath.size === f.size };
@@ -1208,30 +1273,35 @@ async function syncFolder(fileList) {
   // Dossier parent d'un dossier déjà synchronisé (ex. AUDIO qui contient LOOPS) :
   // on rattache les sons existants à ce dossier, sans les réimporter.
   const absorbed = new Set();
-  if (!prefix) for (const { rel, ex } of plan) if (ex && ex.same && ex.t.src && ex.t.src !== rel && rel.endsWith('/' + ex.t.src)) {
+  if (!prefix) for (const { rel, ex } of plan) if (ex && ex.same && ex.t.src && ex.t.src !== rel && (D || rel.endsWith('/' + ex.t.src))) {
     absorbed.add(ex.t.src.split('/')[0]); ex.t.src = rel; dbPut(ex.t);
   }
   if (absorbed.size) { const S1 = loadSources(); absorbed.forEach(r => { if (r !== srcRoot) delete S1[r]; }); saveSources(S1); }
   const knownRoots = new Set([...Object.keys(loadSources()), ...absorbed]);
   // Gros import : on prévient avant de copier des Go sur l'iPhone
   const newBytes = plan.filter(x => !x.ex || !x.ex.same).reduce((a, x) => a + (x.f.size || 0), 0);
-  slog(`Analyse : ${files.length} sons, ${todo} à importer (${(newBytes / 1e9).toFixed(2).replace('.', ',')} Go)`);
-  if (newBytes > 2e9 && !confirm(`${todo} son${todo > 1 ? 's' : ''} à importer, soit ${(newBytes / 1e9).toFixed(1).replace('.', ',')} Go copiés dans l'app sur ton iPhone.\n\nContinuer ?`)) {
+  if (!Q || todo) slog(`Analyse${D ? ' (Mac)' : ''} : ${files.length} sons, ${todo} ${D ? 'nouveaux ou modifiés' : 'à importer'} (${(newBytes / 1e9).toFixed(2).replace('.', ',')} Go)`);
+  if (!D && newBytes > 2e9 && !confirm(`${todo} son${todo > 1 ? 's' : ''} à importer, soit ${(newBytes / 1e9).toFixed(1).replace('.', ',')} Go copiés dans l'app sur ton iPhone.\n\nContinuer ?`)) {
     try { wake && wake.release(); } catch (e) {}
     syncing = false; $('#btnSync').classList.remove('spin'); renderAll();
     return toast('Synchro annulée — astuce : synchronise plutôt les sous-dossiers que tu écoutes', 5000);
   }
-  if (todo) toast(`Synchro : ${todo} son${todo > 1 ? 's' : ''} à importer…`, 0);
+  if (todo && !D) toast(`Synchro : ${todo} son${todo > 1 ? 's' : ''} à importer…`, 0);
   let n = 0;
   for (const { f, rel, ex } of plan) {
     seen.add(rel); if (ex) seen.add(ex.t.src);
     if (ex && ex.same) continue;                      // déjà à jour
-    n++; toast(`Synchro ${n}/${todo} · ${f.name}`, 0);
+    n++; if (!D) toast(`Synchro ${n}/${todo} · ${f.name}`, 0);
     const full = prefix + rel, parts = full.split('/');
     // nom du dossier : chemin après le dossier synchronisé le plus proche (ex. AUDIO/LOOPS/2026 S46 → « 2026 S46 »)
     let cut = 1; for (let i = parts.length - 2; i >= 1; i--) if (knownRoots.has(parts[i])) { cut = i + 1; break; }
     const dirs = parts.slice(cut, -1);
     const project = parts.length > 1 ? (dirs.length ? dirs.join(' / ') : parts[cut - 1]) : IMPORTS;
+    if (D) {                                          // Mac : rien à copier, analyse en arrière-plan
+      if (ex) { Object.assign(ex.t, { size: f.size, mtime: f.lastModified, cloud: f.cloud, pending: true }); decoded.delete(ex.t.id); await dbPut(ex.t); updated++; }
+      else { const t = linkFile(f, { project, src: full }); await dbPut(t); added++; }
+      continue;
+    }
     try {
       if (ex) { await importOne(f, { existing: ex.t }); ex.t.mtime = f.lastModified; await dbPut(ex.t); updated++; }
       else { const t = await importOne(f, { project, src: full }); t.mtime = f.lastModified || Date.now(); await dbPut(t); added++; }
@@ -1241,7 +1311,7 @@ async function syncFolder(fileList) {
   try { wake && wake.release(); } catch (e) {}
   const missing = prefix ? 0 : tracks.filter(t => t.src && t.src.split('/')[0] === root && !seen.has(t.src)).length;
   localStorage.setItem('platine.lastSync', JSON.stringify({ at: Date.now(), root: srcRoot }));
-  { const S0 = loadSources(); S0[srcRoot] = { at: Date.now() }; saveSources(S0); }
+  { const S0 = loadSources(); S0[srcRoot] = { ...(S0[srcRoot] || {}), at: Date.now(), ...(opts.path && !prefix ? { path: opts.path } : {}) }; saveSources(S0); if (D && opts.path && !prefix) DESK.watch(opts.path); }
   syncing = false; $('#btnSync').classList.remove('spin');
   renderAll();
   const msg = [];
@@ -1250,8 +1320,8 @@ async function syncFolder(fileList) {
   if (failed) msg.push(`${failed} illisible${failed > 1 ? 's' : ''}`);
   if (missing) msg.push(`${missing} absent${missing > 1 ? 's' : ''} du dossier`);
   const label = prefix ? `« ${root} » (dans « ${srcRoot} »)` : `« ${root} »`;
-  toast(msg.length ? `${label} : ` + msg.join(' · ') : `${label} : tout est à jour ✓`, 4000);
-  slog(`Fin de synchro ${label} : ` + (msg.length ? msg.join(' · ') : 'tout est à jour') + (failed ? ` — dernière erreur : ${lastErr}` : ''));
+  if (!Q || msg.length) toast(msg.length ? `${label} : ` + msg.join(' · ') : `${label} : tout est à jour ✓`, 4000);
+  if (!Q || msg.length) slog(`Fin de synchro ${label} : ` + (msg.length ? msg.join(' · ') : 'tout est à jour') + (failed ? ` — dernière erreur : ${lastErr}` : ''));
   if (failed) { await sleep(3600); toast('Dernière erreur — ' + lastErr, 8000); }
 }
 
@@ -1408,6 +1478,7 @@ function renderLibrary() {
   $('#syncInfo').textContent = !ls ? '' : nSrc > 1 ? `${nSrc} dossiers synchronisés · dernière synchro ${ago(ls.at)}` : `Synchro « ${ls.root} » ${ago(ls.at)}`;
   $('#allTools').classList.toggle('hidden', noTracks || libTab !== 'all');
   $('#grid').classList.toggle('is-list', libTab === 'all');
+  $('#grid').classList.toggle('is-tiles', libTab === 'prods');
   if (noTracks) { $('#grid').innerHTML = ''; return; }
   if (libTab === 'all') { libItems = []; renderAll_(); return; }
   if (libTab === 'prods') {
@@ -1426,6 +1497,21 @@ function renderLibrary() {
     const cov = isProd ? (coverURLs.has(it.main.id) ? `url('${coverURLs.get(it.main.id)}')` : (artURLs.has(artK) ? `url('${artURLs.get(artK)}')` : (queueArt(artK), gradient(hashHue(it.name))))) : groupCover(it.list, it.name);
     const hasOwn = isProd ? coverURLs.has(it.main.id) : it.list.some(t => coverURLs.has(t.id));
     const sub = isProd ? (it.list.length > 1 ? `${it.list.length} versions` : fmt(it.main.duration)) : `${it.smart ? '<span class="tag">AUTO</span>' : ''}${it.list.length} son${it.list.length > 1 ? 's' : ''}${dur ? ' · ' + fmt(dur) : ''}`;
+    if (isProd) {
+      const n = it.list.length, m = it.main, key = it.list.map(t => t.key).find(Boolean);
+      const meta = [n > 1 ? `<b>${n} versions</b>` : '', it.bpm ? `${Math.round(it.bpm)} BPM` : '', key || '', m.duration ? fmt(m.duration) : ''].filter(Boolean).join(' · ');
+      const PI = n > 1 ? prodInfo(m) : null;
+      const ord = [m, ...it.list.filter(t => t !== m)];
+      const vers = n > 1 ? ord.slice(0, 4).map(t => `<span>${esc(vLabel(t, PI && PI.base))}</span>`).join('') + (n > 4 ? `<span class="more">+${n - 4}</span>` : '') : '';
+      const folder = m.project && m.project !== IMPORTS ? m.project : '';
+      return `<div class="card ptile${cur ? ' is-current' : ''}" data-i="${i}" style="animation-delay:${Math.min(i, 12) * 25}ms">
+      <div class="pt-cover"${hasOwn ? '' : ` data-art="${esc(artK)}"`} style="background-image:${cov}"></div>
+      <div class="pt-body"><div class="pt-top"><h3>${esc(it.name)}</h3>${it.date ? `<time>${when(it.date)}</time>` : ''}</div>
+        <p class="pt-meta">${meta || '&nbsp;'}</p>
+        ${vers ? `<div class="pt-vers">${vers}</div>` : folder ? `<p class="pt-folder">${esc(folder)}</p>` : ''}</div>
+      <button class="cplay" aria-label="Lire">${playing ? PAUSE_SVG : PLAY_SVG}</button>
+    </div>`;
+    }
     return `<div class="card${cur ? ' is-current' : ''}" data-i="${i}" style="animation-delay:${Math.min(i, 10) * 35}ms">
       <div class="cover"${hasOwn ? '' : ` data-art="${esc(artK)}"`} style="background-image:${cov}">${it.list.length ? `<button class="cplay" aria-label="Lire">${playing ? PAUSE_SVG : PLAY_SVG}</button>` : ''}</div>
       <div class="ct"><div><h3>${esc(it.name)}</h3><p>${sub}</p></div></div>
@@ -1627,7 +1713,7 @@ $('#cDelete').onclick = async () => {
     toast('Playlist supprimée');
   } else {
     const list = tracks.filter(t => t.project === view.key);
-    for (const t of list) await deleteTrack(t);
+    for (const t of list) await deleteTrack(t, true);
     toast(`${list.length} son${list.length > 1 ? 's' : ''} supprimé${list.length > 1 ? 's' : ''}`);
   }
   closeCollection();
@@ -1698,9 +1784,15 @@ async function loadTrack(t, autoplay, startAt = 0) {
   current = t;
   let url = audioURLs.get(t.id);
   if (!url) {
-    const b = await blobGet('audio:' + t.id);
+    const wasCloud = !!(t.path && DESK && t.cloud);
+    if (wasCloud) toast('Téléchargement depuis iCloud…', 0);
+    const b = await audioBlob(t);
+    if (wasCloud) $('#toast').classList.remove('show');
     if (!b) return toast('Fichier introuvable');
+    if (current !== t) return;                     // un autre son a été choisi entre-temps
     url = URL.createObjectURL(b); audioURLs.set(t.id, url);
+    if (t.pending) b.arrayBuffer().then(analyze).then(info => { Object.assign(t, { duration: info.duration, peaks: info.peaks, peakDb: info.peakDb, pending: false }); dbPut(t); if (current === t) { renderPlayer(); applyGain(autoGain(t)); } }).catch(() => {});
+    if (DESK) for (const [id, u] of [...audioURLs]) { if (audioURLs.size <= 12) break; if (id !== t.id) { URL.revokeObjectURL(u); audioURLs.delete(id); } }   // mémoire limitée sur Mac
   }
   E.reset(); loopInfo = null; viewSpan = spanTarget = null; if (typeof setSel === 'function') setSel(null);
   E.rate = t.settings.rate;
@@ -1720,9 +1812,10 @@ async function loadTrack(t, autoplay, startAt = 0) {
   syncEngine();
   applyLoop();
   renderPlayer(); refreshCardIcons(); updateMini(); updateMediaSession();
-  predecodeVersions(); prepFile(t);
+  predecodeVersions(); if (!(DESK && t.path)) prepFile(t);
   currentFile = null;
-  blobGet('audio:' + t.id).then(b => {
+  if (wideDesk() && !playerOpen) openPlayer();
+  if (!(DESK && t.path)) blobGet('audio:' + t.id).then(b => {
     if (b && current && current.id === t.id) currentFile = new File([b], t.fileName || (t.title + '.wav'), { type: b.type || 'audio/wav' });
   });
 }
@@ -1773,6 +1866,7 @@ function openPlayer() {
   requestAnimationFrame(sizeWave);
 }
 function closePlayer() {
+  if (wideDesk()) return;
   playerOpen = false; document.body.classList.remove('player-open');
   $('#player').classList.remove('open'); $('#player').setAttribute('aria-hidden', 'true');
   $('#player').style.transform = '';
@@ -2040,6 +2134,12 @@ function shortVersionName(u, base) {
   let r = base && low.startsWith(base) ? t.slice(base.length) : t;
   r = r.replace(/^[^a-z0-9]+/i, '').replace(/[_]+/g, ' ').trim();
   return (r || 'Original').slice(0, 22);
+}
+function vLabel(t, base) {                          // nom de version sans BPM ni tags : « nobass », « half »…
+  const r = shortVersionName(t, base);
+  if (r === 'Original') return r;
+  const c = r.replace(/\b\d{2,3}(?:[.,]\d)?\s*-?\s*b\.?p\.?m?\b/gi, ' ').replace(/\b[A-G][#b]?\s?(?:min|maj|minor|major|m)\b/g, ' ').replace(TAGS, ' ').replace(/\s{2,}/g, ' ').trim();
+  return c || 'Original';
 }
 function renderVersions() {
   const t = current, vs = versionsOf(t), box = $('#pVersions');
@@ -2537,10 +2637,13 @@ $('#eDelete').onclick = async () => {
     return;
   }
   delete btn.dataset.armed; btn.textContent = 'Supprimer ce son';
-  await deleteTrack(t);
+  await deleteTrack(t, true);
   closeEdit(); renderAll(); toast("Son supprimé (l'original n'est pas touché)");
 };
-async function deleteTrack(t) {
+// Mac : un son retiré à la main n'est pas réajouté à la synchro suivante
+const ignored = () => { try { return new Set(JSON.parse(localStorage.getItem('platine.ignored') || '[]')); } catch (e) { return new Set(); } };
+async function deleteTrack(t, byHand) {
+  if (byHand && t.path) { const I = ignored(); I.add(t.path); localStorage.setItem('platine.ignored', JSON.stringify([...I])); }
   if (current && current.id === t.id) {
     E.reset(); keepAlive.pause(); audio.removeAttribute('src'); audio.load(); current = null; E.onstate();
     closePlayer(); $('#mini').classList.add('off');
@@ -2620,6 +2723,7 @@ function shareNow(files, title) {
 }
 $('#pShare').onclick = () => {
   if (!current) return;
+  if (DESK && current.path) return DESK.share([current.path]);
   const f = shareFiles.get(current.id) || currentFile;
   if (!f) { prepFile(current); return toast('Fichier en préparation, réessaie'); }
   shareNow([f], current.title);
@@ -2636,7 +2740,7 @@ function setSelect(on, firstId) {
 }
 function toggleSel(id, force) {
   const on = force ?? !selIds.has(id);
-  if (on) { selIds.add(id); const t = byId(id); if (t) prepFile(t); } else selIds.delete(id);
+  if (on) { selIds.add(id); const t = byId(id); if (t && !(DESK && t.path)) prepFile(t); } else selIds.delete(id);
   document.querySelectorAll(`.row[data-id="${id}"]`).forEach(r => r.classList.toggle('picked', on));
   renderSelBar();
 }
@@ -2655,6 +2759,7 @@ $('#selAll').onclick = () => {
 };
 $('#selShare').onclick = async () => {
   const ts = [...selIds].map(byId).filter(Boolean);
+  if (DESK) { const ps = deskPaths([...selIds]); if (ps.length) { await DESK.share(ps); setSelect(false); } return; }
   const files = ts.map(t => shareFiles.get(t.id));
   if (files.some(f => !f)) { ts.forEach(prepFile); return toast('Préparation des fichiers… réessaie dans une seconde'); }
   const ok = await shareNow(files, ts.length === 1 ? ts[0].title : `${ts.length} sons`);
@@ -2717,6 +2822,11 @@ function renderSources() {
 let expectRoot = null;
 function pickFolder(root) {
   if (syncing) return toast('Synchro en cours…');
+  if (DESK) {
+    const known = root && (loadSources()[root] || {}).path;
+    (known ? Promise.resolve(known) : DESK.chooseFolder()).then(p => { if (p) { toast('Lecture du dossier…', 0); syncDesktop(p); } });
+    return;
+  }
   expectRoot = root || null;
   toast(root ? `Choisis le dossier « ${root} » puis touche « Ouvrir »` : 'Va dans le dossier à ajouter, puis touche « Ouvrir »', 6000);
   slog(root ? `Sélecteur ouvert (synchro de « ${root} »)` : 'Sélecteur ouvert (nouveau dossier)'); startWait();
@@ -2736,7 +2846,7 @@ $('#srcList').addEventListener('click', async e => {
   }
   const list = tracks.filter(t => t.src && t.src.split('/')[0] === root);
   for (const t of list) await deleteTrack(t);
-  const s = loadSources(); delete s[root]; saveSources(s);
+  const s = loadSources(); if (DESK && s[root] && s[root].path) DESK.forgetRoot(s[root].path); delete s[root]; saveSources(s);
   const ls = JSON.parse(localStorage.getItem('platine.lastSync') || 'null');
   if (ls && ls.root === root) localStorage.removeItem('platine.lastSync');
   renderSources(); renderAll(); toast(`« ${root} » retiré (${list.length} sons)`);
@@ -2773,6 +2883,71 @@ $('#waitCancel').onclick = () => { slog('Attente arrêtée par toi (aucun fichie
 window.addEventListener('focus', () => { if (waitTimer && !waitBack) { waitBack = true; slog('Retour du sélecteur — en attente des fichiers d\'iOS'); } });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && waitTimer && !waitBack && Date.now() - waitT0 > 800) { waitBack = true; slog('Retour du sélecteur — en attente des fichiers d\'iOS'); } });
 $('#folderInput').addEventListener('cancel', () => { slog('Sélecteur annulé'); stopWait(); });
+
+
+/* ---------- Version Mac (app Platine pour macOS) ----------
+   Dans l'app Mac, les sons ne sont pas copiés : Platine lit directement
+   les fichiers de tes dossiers. Les nouveaux sons sont repérés tout seuls. */
+const wideDesk = () => !!DESK && innerWidth >= 980;
+function deskFile(x) { return { name: x.rel.split('/').pop(), size: x.size, lastModified: x.mtime, webkitRelativePath: x.rel, path: x.path, cloud: !!x.cloud }; }
+let rescanWanted = new Set();
+async function syncDesktop(rootPath, { quiet = false } = {}) {
+  if (syncing) { rescanWanted.add(rootPath); return; }
+  const r = await DESK.scan(rootPath);
+  if (!r || r.error) { slog(`Dossier illisible : ${rootPath} (${r && r.error})`); if (!quiet) toast(`Dossier illisible : ${r && r.error || rootPath}`, 5000); return; }
+  const I = ignored();
+  if (!quiet && I.size) { let k = 0; for (const p of [...I]) if (p.startsWith(rootPath + '/')) { I.delete(p); k++; } if (k) localStorage.setItem('platine.ignored', JSON.stringify([...I])); }  // synchro manuelle : tout revient
+  await syncFolder(r.files.filter(x => !I.has(x.path)).map(deskFile), { desktop: true, quiet, path: rootPath });
+  analyzeQueue();
+  if (rescanWanted.size) { const next = [...rescanWanted]; rescanWanted.clear(); for (const p of next) await syncDesktop(p, { quiet: true }); }
+}
+// Analyse (durée, forme d'onde, volume) en arrière-plan, un son à la fois
+let anaBusy = false;
+async function analyzeQueue() {
+  if (anaBusy || !DESK) return; anaBusy = true;
+  let n = 0, last = Date.now();
+  try {
+    for (;;) {
+      const t = tracks.find(x => x.pending && !x.cloud && x.path); if (!t) break;
+      try { const info = await analyze(await DESK.readFile(t.path)); Object.assign(t, { duration: info.duration, peaks: info.peaks, peakDb: info.peakDb }); }
+      catch (e) { console.warn('analyse', t.path, e); t.unreadable = true; }
+      t.pending = false; await dbPut(t); n++;
+      if (current === t) { renderPlayer(); applyGain(autoGain(t)); }
+      if (Date.now() - last > 4000) { last = Date.now(); renderAll(); }
+      await sleep(5);
+    }
+  } finally { anaBusy = false; if (n) renderAll(); }
+}
+function deskPaths(ids) { return ids.map(byId).filter(t => t && t.path).map(t => t.path); }
+if (DESK) {
+  document.documentElement.classList.add('desktop');
+  DESK.onChange(root => syncDesktop(root, { quiet: true }));
+  // fichiers glissés vers d'autres apps (Logic, WhatsApp, Mail, Finder…)
+  document.addEventListener('pointerdown', e => { const el = e.target.closest('.row,.card[data-i]'); if (el && !el.draggable) el.draggable = true; }, true);
+  document.addEventListener('dragstart', e => {
+    const row = e.target.closest('.row'), card = e.target.closest('.card[data-i]');
+    let ids = [];
+    if (row) ids = selOn && selIds.has(row.dataset.id) ? [...selIds] : [row.dataset.id];
+    else if (card) { const it = libItems[+card.dataset.i]; if (it) ids = it.kind === 'prod' ? [it.main.id] : it.list.map(t => t.id); }
+    const paths = deskPaths(ids); if (!paths.length) return;
+    e.preventDefault(); DESK.startDrag(paths);
+  });
+  $('#pFinder').onclick = () => { if (current && current.path) DESK.reveal(current.path); };
+  // grand écran : le lecteur reste ouvert à droite
+  const lay = () => { document.body.classList.toggle('wide', wideDesk()); if (wideDesk() && current && !playerOpen) openPlayer(); };
+  window.addEventListener('resize', lay); lay();
+  document.addEventListener('keydown', e => {
+    if (/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    if (e.key === 'ArrowRight' && e.metaKey) { e.preventDefault(); $('#bNext').click(); }
+    else if (e.key === 'ArrowLeft' && e.metaKey) { e.preventDefault(); $('#bPrev').click(); }
+    else if (e.key === 'f' && e.metaKey) { e.preventDefault(); libTab = 'all'; renderLibrary(); setTimeout(() => $('#allSearch').focus(), 50); }
+  });
+}
+async function deskStart() {
+  const S = loadSources();
+  for (const [root, v] of Object.entries(S)) if (v.path) { DESK.watch(v.path); await syncDesktop(v.path, { quiet: true }); }
+  analyzeQueue();
+}
 
 /* ---------- Divers ---------- */
 let toastTimer;
@@ -2813,7 +2988,8 @@ $('#buildInfo').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · 
     playlists = await plAll();
     renderLibrary();
     // Prépare les sons en arrière-plan pour un démarrage instantané
-    for (const t of tracks) { if (!audioURLs.has(t.id)) { const b = await blobGet('audio:' + t.id); if (b) audioURLs.set(t.id, URL.createObjectURL(b)); } }
+    if (DESK) deskStart();
+    else for (const t of tracks) { if (!audioURLs.has(t.id)) { const b = await blobGet('audio:' + t.id); if (b) audioURLs.set(t.id, URL.createObjectURL(b)); } }
   } catch (e) {
     console.error(e); toast('Stockage indisponible (navigation privée ?)', 5000); renderLibrary();
   }

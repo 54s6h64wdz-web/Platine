@@ -59,3 +59,11 @@ Ferme l'app et rouvre-la pour voir la nouvelle version. Tes sons ne sont pas tou
 - Tes sons sont copiés dans le stockage de l'app. Garde toujours tes originaux dans Fichiers ou iCloud : si tu supprimes l'app, iOS efface aussi ses sons.
 - Quand le gain est réglé sur autre chose que 0 dB, le son passe par Web Audio. Selon la version d'iOS, la lecture peut alors se couper quand l'écran est verrouillé. À 0 dB, la lecture passe par le lecteur natif d'iOS : c'est le mode le plus fiable en arrière-plan.
 - Changer la tonalité sans changer la vitesse n'est pas encore possible (prévu pour une prochaine version).
+
+
+## Platine pour Mac
+
+Le dossier `mac/` contient l'app Mac (Electron). Elle affiche le même Platine que l'iPhone, mais lit **directement** tes dossiers (rien n'est copié), repère tout seul les nouveaux sons, et ajoute : bouton Finder, partage macOS, glisser un son vers Logic/WhatsApp/Mail, lecteur fixé à droite sur grand écran, ⌘← / ⌘→ (précédent/suivant), ⌘F (recherche).
+
+- L'app est fabriquée automatiquement par GitHub (onglet **Actions → App Mac**) et publiée dans **Releases → Platine pour Mac** (`Platine-Mac.dmg`).
+- Les nouvelles fonctions de Platine arrivent sur Mac sans réinstaller (l'app charge le site). Il ne faut retélécharger l'app que si le dossier `mac/` change.

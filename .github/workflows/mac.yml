@@ -1,0 +1,37 @@
+# Fabrique l'app Platine pour Mac et la publie dans « Releases » (onglet du dépôt).
+# Se lance tout seul quand la coque Mac (dossier mac/) change, ou à la main
+# depuis l'onglet Actions → « App Mac » → Run workflow.
+name: App Mac
+on:
+  push:
+    branches: [main]
+    paths: ['mac/**', '.github/workflows/mac.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Copie de secours de Platine (si pas de connexion)
+        run: |
+          mkdir -p mac/web
+          cp index.html manifest.webmanifest scratch-worklet.js regle.html mac/web/
+          cp -r icons mac/web/
+      - name: Construction
+        working-directory: mac
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+        run: |
+          npm install --no-audit --no-fund
+          npx electron-builder --mac --publish never
+      - name: Publication
+        env: { GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
+        run: |
+          V=$(node -p "require('./mac/package.json').version")
+          cd mac/dist
+          mv Platine-*.dmg Platine-Mac.dmg; mv Platine-*-mac.zip Platine-Mac.zip
+          gh release delete mac --yes --cleanup-tag || true
+          gh release create mac Platine-Mac.dmg Platine-Mac.zip --title "Platine pour Mac (coque $V)" --notes "Télécharge **Platine-Mac.dmg**, ouvre-le et glisse Platine dans Applications. Premier lancement : Réglages Système → Confidentialité et sécurité → « Ouvrir quand même ». L'app se met à jour toute seule avec le site."
