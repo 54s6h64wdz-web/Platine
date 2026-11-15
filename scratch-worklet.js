@@ -44,10 +44,10 @@ class ScratchProcessor extends AudioWorkletProcessor {
     if (!this.ch || (this.mode === 'idle' && this.g < 1e-4)) { for (const o of out) o.fill(0); return true; }
     const sr = sampleRate, bsr = this.bsr;
     const kSlew = 1 - Math.exp(-1 / (sr * 0.08)), follow = 1 / (sr * 0.07), vmax = this.vmax || 2 * bsr / sr;
-    const speedingUp = Math.abs(this.tv) > Math.abs(this.v);
-    const kSpin = 1 - Math.exp(-1 / (sr * (speedingUp ? 0.5 : 0.6)));     // inertie du plateau     // inertie du plateau au lâcher
+    const one = bsr / sr;                            // vitesse ×1 (échantillons du son par échantillon de sortie)
+    const acc = (this.tv === 0 ? 0.7 : 0.45) * one / sr;   // couple du moteur : 0,45× par seconde (frein : 0,7×/s)
+    const near = 0.18 * one, kEase = 1 - Math.exp(-1 / (sr * 0.35));     // inertie du plateau au lâcher
     const kG = 1 - Math.exp(-1 / (sr * 0.004));
-    const kFric = Math.exp(-1 / (sr * 0.7)), brake = 1.2 * (bsr / sr) / sr;   // en pause : glisse puis s'arrête (≈ 1 s)
     const a = 0.995, L = this.loop, nc = this.ch.length, last = this.len - 2;
     for (let i = 0; i < n; i++) {
       if (this.mode === 'hold') {                     // tape stop
@@ -60,10 +60,13 @@ class ScratchProcessor extends AudioWorkletProcessor {
         this.pos += this.v;
       }
       else if (this.mode === 'spin') {
-        if (this.tv === 0) {                          // frein (lecture en pause) : friction + freinage constant, arrêt net
-          this.v *= kFric; const dv = brake * Math.sign(this.v);
-          this.v = Math.abs(this.v) <= Math.abs(dv) ? 0 : this.v - dv;
-        } else this.v += (this.tv - this.v) * kSpin;  // moteur : retour en douceur à la vitesse de lecture
+        // Plateau lourd : il garde son élan dans le sens du lancer, et le moteur
+        // (couple limité) le ramène lentement et régulièrement à la vitesse réglée,
+        // avec une arrivée en douceur sur la fin.
+        const diff = this.tv - this.v;
+        if (Math.abs(diff) > near) this.v += (diff > 0 ? acc : -acc);
+        else this.v += diff * kEase;
+        if (this.tv === 0 && Math.abs(this.v) < 0.003 * one) this.v = 0;
         if (this.v > vmax) this.v = vmax; else if (this.v < -vmax) this.v = -vmax;
         this.pos += this.v;
       }
@@ -91,7 +94,7 @@ class ScratchProcessor extends AudioWorkletProcessor {
     }
     if (this.stopping && this.g < 1e-3) { this.mode = 'idle'; this.stopping = false; this.g = 0; }
     if (this.mode === 'spin' && !this.settled) {
-      const tol = this.tv === 0 ? 1e-9 : 0.012 * Math.abs(this.tv);
+      const tol = this.tv === 0 ? 1e-9 : 0.01 * Math.abs(this.tv);
       if (Math.abs(this.v - this.tv) <= tol) {
         this.settled = true; this.v = this.tv;
         this.port.postMessage({ type: 'settled', pos: this.pos / bsr, rate: this.tv * sr / bsr, time: currentTime });
