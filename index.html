@@ -22,6 +22,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;background:var(--bg);color:var(--text);overflow:hidden}
+@supports (height:100dvh){html,body{height:100dvh}}
 body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:manipulation}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 button:active{transform:scale(.96)}
@@ -61,7 +62,7 @@ svg{display:block}
 .install button{color:var(--muted);font-size:20px;line-height:1}
 
 /* ---------- Mini lecteur ---------- */
-.mini{position:absolute;left:12px;right:12px;bottom:calc(var(--sab) + 12px);height:66px;border-radius:18px;background:rgba(34,34,37,.9);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);display:flex;align-items:center;gap:12px;padding:0 8px 0 9px;box-shadow:0 12px 40px rgba(0,0,0,.5);overflow:hidden;z-index:5;transition:transform .4s var(--ease),opacity .3s}
+.mini{position:fixed;left:12px;right:12px;bottom:max(12px,calc(var(--sab) - 8px));height:66px;border-radius:18px;background:rgba(34,34,37,.9);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);display:flex;align-items:center;gap:12px;padding:0 8px 0 9px;box-shadow:0 12px 40px rgba(0,0,0,.5);overflow:hidden;z-index:5;transition:transform .4s var(--ease),opacity .3s}
 .mini.off{transform:translateY(120%);opacity:0;pointer-events:none}
 .mini-cover{width:48px;height:48px;border-radius:50%;background-size:cover;background-position:center;flex:none;position:relative}
 .mini-cover::after{content:"";position:absolute;inset:42%;border-radius:50%;background:#111}
@@ -138,6 +139,15 @@ svg{display:block}
 .ch-r{display:flex;align-items:center;gap:10px}
 .rst{padding:6px 10px;border-radius:9px;background:var(--surface2);color:var(--muted);font-family:var(--mono);font-size:12px;transition:background .2s,color .2s}
 .rst.on{background:var(--accent);color:#1a0b04;font-weight:600}
+.tabs .tab{padding:10px 11px}
+.switch{width:52px;height:32px;border-radius:999px;background:var(--surface2);position:relative;transition:background .25s}
+.switch i{position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#fff;transition:transform .3s var(--ease);box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.switch.on{background:var(--accent)}
+.switch.on i{transform:translateX(20px)}
+.bpm-in{width:62px;text-align:center;padding:7px 4px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-family:var(--mono);font-size:15px!important;outline:none}
+.bpm-in:focus{border-color:var(--accent)}
+.tap{background:var(--accent-soft)!important;color:var(--accent)}
+#loopCtl.off{opacity:.45;pointer-events:none}
 
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:38px;background:transparent;touch-action:none}
 input[type=range]:focus{outline:none}
@@ -329,6 +339,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
       <div class="tabs">
         <button class="tab on" data-tab="speed">Vitesse</button>
         <button class="tab" data-tab="gain">Volume</button>
+        <button class="tab" data-tab="loop">Loop</button>
         <div class="tab-icons">
           <button class="tab" id="bAddPl" aria-label="Ajouter à une playlist">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h12M3 12h12M3 18h8M18 15v6M15 18h6"/></svg>
@@ -365,6 +376,26 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
           <button id="bNorm" class="accent">Normaliser</button>
         </div>
         <p class="hint" id="gainHint"></p>
+      </div>
+
+      <div id="tabLoop" class="hidden">
+        <div class="ctl row"><span>Loop ∞</span><button class="switch" id="loopToggle" aria-label="Activer la loop"><i></i></button></div>
+        <p class="hint" id="loopHint"></p>
+        <div class="ctl row"><span>BPM</span>
+          <div class="stepper"><button id="bpmDown">−</button><input id="bpmInput" class="bpm-in" inputmode="decimal" autocomplete="off"><button id="bpmUp">+</button><button id="bpmTap" class="tap">Tap</button></div>
+        </div>
+        <div id="loopCtl">
+          <div class="ctl row"><span>Mesures</span>
+            <div class="stepper"><button id="barsDown">−1</button><b id="vBars">–</b><button id="barsUp">+1</button></div>
+          </div>
+          <div class="ctl">
+            <div class="ctl-head"><span>Downbeat</span><div class="ch-r"><b id="vDown">0.000 s</b><button class="rst" id="downAuto">Auto</button></div></div>
+            <div class="quick" style="margin:10px 0 8px">
+              <button id="downHere" class="accent">Poser ici</button><button data-nudge="-0.01">−10 ms</button><button data-nudge="0.01">+10 ms</button><button id="downZero">Début</button>
+            </div>
+          </div>
+          <div class="seg" id="tailSeg"><button data-wrap="1">Recoller la queue</button><button data-wrap="0">Couper la queue</button></div>
+        </div>
       </div>
     </div>
   </div>
@@ -414,7 +445,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 4, version: '2.2', date: '15/11/2026' };
+const BUILD = { n: 5, version: '2.3', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -550,7 +581,14 @@ function applyGain(dbv) {
 
 /* Sons décodés (les 3 derniers restent en mémoire) */
 const decoded = new Map();
-async function getBuffer(t) {
+const decoding = new Map();
+function getBuffer(t) {
+  if (decoded.has(t.id)) return Promise.resolve(decodeHit(t.id));
+  if (!decoding.has(t.id)) decoding.set(t.id, decodeTrack(t).finally(() => decoding.delete(t.id)));
+  return decoding.get(t.id);
+}
+function decodeHit(id) { const b = decoded.get(id); decoded.delete(id); decoded.set(id, b); return b; }
+async function decodeTrack(t) {
   if (decoded.has(t.id)) { const b = decoded.get(t.id); decoded.delete(t.id); decoded.set(t.id, b); return b; }
   const blob = await blobGet('audio:' + t.id);
   if (!blob) return null;
@@ -564,11 +602,12 @@ async function getBuffer(t) {
 const E = {
   kind: 'element',        // 'buffer' (Web Audio) ou 'element' (lecteur natif)
   playing: false, rate: 1, buf: null, src: null, p0: 0, t0: 0, token: 0,
-  loopA: null, loopB: null, repeatOne: false,
+  loopA: null, loopB: null, repeatOne: false, loopInf: null, base: null, loopBuf: null,
   onstate() {}, onended() {},
   duration() { return this.buf ? this.buf.duration : (audio.duration || (current && current.duration) || 0); },
   loopRange() {
     if (this.loopA != null && this.loopB != null) return [this.loopA, this.loopB];
+    if (this.loopInf) return [this.loopInf.start, this.loopInf.end];
     if (this.repeatOne && this.buf) return [0, this.buf.duration];
     return null;
   },
@@ -630,7 +669,7 @@ const E = {
   refreshLoop() { if (this.kind === 'buffer' && this.playing) this.startBuffer(this.time()); audio.loop = this.repeatOne; },
   toBuffer(buf) {
     const pos = this.kind === 'element' ? (audio.currentTime || 0) : this.time(), was = this.playing;
-    this.buf = buf;
+    this.base = buf; this.buf = this.loopBuf || buf;
     if (this.kind === 'buffer') return;
     this.kind = 'buffer'; audio.pause(); this.p0 = pos;
     if (was) { ctx(); this.startBuffer(pos); }
@@ -642,7 +681,20 @@ const E = {
     audio.currentTime = pos;
     if (was) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
   },
-  reset() { this.stopSource(); audio.pause(); this.playing = false; this.p0 = 0; this.buf = null; this.kind = 'element'; }
+  reset() { this.stopSource(); audio.pause(); this.playing = false; this.p0 = 0; this.buf = this.base = this.loopBuf = null; this.loopInf = null; this.kind = 'element'; },
+  /* Loop ∞ : on remplace le son par sa version « bouclable » (même début, queue recollée) */
+  inLoop(pos) { const L = this.loopInf; return L && pos >= L.end ? L.start + ((pos - L.start) % (L.end - L.start)) : pos; },
+  setLoopInf(lb) {
+    const pos = this.time();
+    this.loopBuf = lb.buffer; this.loopInf = { start: lb.start, end: lb.end };
+    if (this.kind === 'buffer') { this.buf = lb.buffer; if (this.playing) this.startBuffer(this.inLoop(pos)); else this.p0 = this.inLoop(this.p0); }
+  },
+  clearLoopInf() {
+    if (!this.loopInf && !this.loopBuf) return;
+    const pos = this.time();
+    this.loopBuf = null; this.loopInf = null;
+    if (this.kind === 'buffer' && this.base) { this.buf = this.base; if (this.playing) this.startBuffer(pos); }
+  }
 };
 // Le lecteur natif peut être mis en pause par iOS (appel, autre app…)
 audio.addEventListener('play',  () => { if (E.kind === 'element' && !E.playing) { E.playing = true; E.onstate(); } });
@@ -655,9 +707,101 @@ function syncEngine() {
   if (!current) return;
   if (!wantBuffer()) return E.toElement();
   const t = current;
-  if (decoded.has(t.id)) return E.toBuffer(decoded.get(t.id));
+  if (decoded.has(t.id)) { E.toBuffer(decoded.get(t.id)); return; }
   getBuffer(t).then(buf => { if (buf && current && current.id === t.id && wantBuffer()) E.toBuffer(buf); })
     .catch(err => console.warn('Décodage impossible, lecteur natif utilisé', err));
+}
+
+/* =========================================================
+   Loop ∞ calée sur le BPM
+   1. Une mesure = 4 temps = 240 / BPM secondes.
+   2. Downbeat : détecté automatiquement (le temps fort qui revient à chaque
+      mesure), ou posé à la main. Une petite intro avant le downbeat est jouée
+      une seule fois, puis la boucle tourne à partir du downbeat.
+   3. Nombre de mesures : le plus grand nombre entier qui tient dans le fichier,
+      moins les mesures finales qui ne sont que de la queue de reverb
+      (beaucoup plus faibles que le reste).
+   4. Queue de reverb : recollée par-dessus le début de la boucle (comme dans
+      un logiciel de production) ou coupée avec un fondu très court.
+   ========================================================= */
+const LOOP_DEFAULT = { on: false, downbeat: null, manualDown: false, bars: null, manualBars: false, wrap: true };
+const bpmOf = t => { const b = parseFloat(String(t && t.bpm || '').replace(',', '.')); return b >= 40 && b <= 250 ? b : 0; };
+
+function envelope(buf, hop = 256) {
+  const n = Math.floor(buf.length / hop), env = new Float32Array(n), chs = [];
+  for (let c = 0; c < buf.numberOfChannels; c++) chs.push(buf.getChannelData(c));
+  for (let i = 0; i < n; i++) {
+    let s = 0; const a = i * hop;
+    for (const d of chs) for (let j = a; j < a + hop; j += 2) s += d[j] * d[j];
+    env[i] = Math.sqrt(s / (hop / 2 * chs.length));
+  }
+  return env;
+}
+function analyzeLoop(buf, bpm, fixedDown) {
+  const sr = buf.sampleRate, hop = 256, env = envelope(buf, hop), nh = env.length;
+  const barS = 240 / bpm * sr, barH = barS / hop;
+  let d = 0;
+  if (fixedDown != null) d = Math.round(fixedDown * sr);
+  else {
+    const on = new Float32Array(nh);
+    for (let i = 1; i < nh; i++) on[i] = Math.max(0, env[i] - env[i - 1]);
+    const score = ph => { let s = 0; for (let k = 0; ph + k * barH < nh; k++) { const i = Math.round(ph + k * barH); s += Math.max(on[i] || 0, on[i - 1] || 0, on[i + 1] || 0); } return s; };
+    let best = 0, bestS = -1; const s0 = score(0);
+    for (let ph = 0; ph < barH && ph < nh; ph++) { const s = score(ph); if (s > bestS) { bestS = s; best = ph; } }
+    d = s0 >= 0.8 * bestS ? 0 : best * hop;                // on privilégie le tout début du fichier
+    if (d > 0) {                                            // affine au premier échantillon de l'attaque
+      const x = buf.getChannelData(0), a0 = Math.max(0, d - hop), a1 = Math.min(buf.length, d + 2 * hop);
+      let mx = 0, base = 0;
+      for (let i = a0; i < a1; i++) mx = Math.max(mx, Math.abs(x[i]));
+      for (let i = Math.max(0, a0 - hop); i < a0; i++) base = Math.max(base, Math.abs(x[i]));   // niveau juste avant
+      const thr = Math.max(base * 1.5, base + 0.5 * (mx - base));
+      let k = -1; for (let i = a0; i < a1; i++) if (Math.abs(x[i]) > thr) { k = i; break; }
+      if (k > 0) {                                          // recule jusqu'au passage par zéro précédent (max 5 ms)
+        const lim = Math.max(0, k - Math.round(sr * 0.005));
+        while (k > lim && Math.sign(x[k]) === Math.sign(x[k - 1])) k--;
+        d = k;
+      }
+    }
+  }
+  let n = Math.floor((buf.length - d) / barS + 0.02);
+  const e = [];
+  for (let b = 0; b < n; b++) {
+    const i0 = Math.floor((d + b * barS) / hop), i1 = Math.min(nh, Math.floor((d + (b + 1) * barS) / hop));
+    let s = 0; for (let i = i0; i < i1; i++) s += env[i]; e.push(s / Math.max(1, i1 - i0));
+  }
+  const ref = e.slice(0, Math.max(1, n - 1)).sort((a, b) => a - b)[Math.floor(Math.max(1, n - 1) / 2)] || 0;
+  while (n > 1 && e[n - 1] < 0.35 * ref) n--;              // dernière mesure = juste la queue
+  return { downbeat: d / sr, bars: Math.max(1, n), maxBars: Math.max(1, Math.floor((buf.length - d) / barS + 0.02)) };
+}
+function buildLoopBuffer(buf, downbeat, bars, bpm, wrap) {
+  const sr = buf.sampleRate, d = Math.round(downbeat * sr), N = Math.round(bars * 240 / bpm * sr);
+  const end = Math.min(buf.length, d + N), loopLen = end - d;
+  const out = ctx().createBuffer(buf.numberOfChannels, end, sr);
+  const fade = Math.min(Math.round(sr * 0.004), loopLen >> 2);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const src = buf.getChannelData(c), dst = out.getChannelData(c);
+    dst.set(src.subarray(0, end));
+    if (wrap && loopLen > 0) for (let i = end; i < buf.length; i++) dst[d + ((i - end) % loopLen)] += src[i];   // queue recollée
+    else for (let k = 0; k < fade; k++) dst[end - 1 - k] *= k / fade;                                          // coupe propre
+  }
+  return { buffer: out, start: d / sr, end: end / sr };
+}
+let loopInfo = null;     // infos affichées (mesures, durée…)
+async function applyLoop() {
+  const t = current; if (!t) return;
+  t.loop = { ...LOOP_DEFAULT, ...(t.loop || {}) };
+  const L = t.loop, bpm = bpmOf(t);
+  if (!L.on || !bpm) { loopInfo = null; E.clearLoopInf(); renderLoopUI(); return; }
+  let buf;
+  try { buf = await getBuffer(t); } catch (e) { console.warn(e); }
+  if (!buf || current !== t) return;
+  const a = analyzeLoop(buf, bpm, L.manualDown ? L.downbeat : null);
+  L.downbeat = a.downbeat;
+  L.bars = L.manualBars && L.bars ? clamp(L.bars, 1, a.maxBars) : a.bars;
+  const lb = buildLoopBuffer(buf, L.downbeat, L.bars, bpm, L.wrap);
+  loopInfo = { bars: L.bars, maxBars: a.maxBars, len: lb.end - lb.start, start: lb.start, end: lb.end };
+  E.setLoopInf(lb);
+  renderLoopUI(); saveSoon();
 }
 
 function applyRate() {
@@ -716,7 +860,9 @@ async function analyze(buf) {
   } finally { try { ctx.close(); } catch (e) {} }
 }
 function guessMeta(name) {
-  const bpm = (/(\d{2,3})\s*bpm/i.exec(name) || [])[1] || '';
+  const m = /(?:^|[^\d])(\d{2,3}(?:[.,]\d)?)\s*[-_ ]?\s*b\.?p\.?m?(?![a-z])/i.exec(name) || /bpm\s*[-_ ]?\s*(\d{2,3}(?:[.,]\d)?)/i.exec(name);
+  let bpm = m ? m[1].replace(',', '.') : '';
+  if (bpm && !(+bpm >= 40 && +bpm <= 250)) bpm = '';
   const k = /(?:^|[\s_\-.])([A-G][#b]?)\s?(min|maj|minor|major|m)(?=$|[\s_\-.])/i.exec(name);
   let key = '';
   if (k) { const q = k[2].toLowerCase(); key = k[1][0].toUpperCase() + (k[1][1] || '') + (q.startsWith('maj') ? ' maj' : ' min'); }
@@ -739,7 +885,7 @@ async function importOne(f, { project = IMPORTS, src = null, existing = null } =
   const t = {
     id, fileName: f.name, title: f.name.replace(/\.[^.]+$/, ''), project, src, size: f.size,
     artist: localStorage.getItem('platine.artist') || '',
-    bpm: meta.bpm, key: meta.key, notes: '', created: Date.now(),
+    bpm: meta.bpm, key: meta.key, notes: '', created: Date.now(), loop: { ...LOOP_DEFAULT, on: !!meta.bpm },
     duration: info.duration, peaks: info.peaks, peakDb: info.peakDb,
     hue: Math.floor(Math.random() * 360), hasCover: false, settings: { ...DEFAULTS }
   };
@@ -1055,7 +1201,7 @@ async function loadTrack(t, autoplay) {
     if (!b) return toast('Fichier introuvable');
     url = URL.createObjectURL(b); audioURLs.set(t.id, url);
   }
-  E.reset();
+  E.reset(); loopInfo = null;
   E.rate = t.settings.rate;
   E.loopA = t.loopA ?? null; E.loopB = t.loopB ?? null;
   E.repeatOne = repeatMode === 'one';
@@ -1066,6 +1212,7 @@ async function loadTrack(t, autoplay) {
   if (wantBuffer() && decoded.has(t.id)) { E.kind = 'buffer'; E.buf = decoded.get(t.id); }
   if (autoplay) play();
   syncEngine();
+  applyLoop();
   renderPlayer(); refreshCardIcons(); updateMini(); updateMediaSession();
   currentFile = null;
   blobGet('audio:' + t.id).then(b => {
@@ -1149,6 +1296,7 @@ function renderPlayer() {
   $('#discLabel').style.backgroundImage = coverCSS(t);
   $('#tDur').textContent = fmt(t.duration);
   renderChips();
+  renderLoopUI();
   // Mode
   document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === s.mode));
   $('#modeHint').textContent = s.mode === 'vari'
@@ -1191,6 +1339,7 @@ function renderChips() {
   }
   if (s.rate !== 1) out.push(`<span class="chip hot">${s.mode === 'vari' ? 'Varispeed' : 'Tempo'}</span>`);
   if (s.gainDb !== 0) out.push(`<span class="chip hot">${fmtNum(s.gainDb)} dB</span>`);
+  if (loopInfo && t.loop && t.loop.on) out.push(`<span class="chip hot">∞ ${loopInfo.bars} mes.</span>`);
   $('#pChips').innerHTML = out.join('');
 }
 function paintRange(el, center) {
@@ -1235,6 +1384,7 @@ document.querySelectorAll('.tab[data-tab]').forEach(tb => tb.onclick = () => {
   document.querySelectorAll('.tab[data-tab]').forEach(x => x.classList.toggle('on', x === tb));
   $('#tabSpeed').classList.toggle('hidden', tb.dataset.tab !== 'speed');
   $('#tabGain').classList.toggle('hidden', tb.dataset.tab !== 'gain');
+  $('#tabLoop').classList.toggle('hidden', tb.dataset.tab !== 'loop');
 });
 
 /* ---------- Transport ---------- */
@@ -1258,8 +1408,77 @@ $('#bLoop').onclick = () => {
   renderPlayer();
 };
 function checkLoop() {
-  if (E.kind === 'element' && current && current.loopB != null && E.time() >= current.loopB) E.seek(current.loopA);
+  if (E.kind !== 'element' || !current) return;
+  if (current.loopB != null && E.time() >= current.loopB) E.seek(current.loopA);
+  else if (current.loopB == null && E.loopInf && E.time() >= E.loopInf.end) E.seek(E.loopInf.start);
 }
+/* ---------- Onglet Loop ---------- */
+function renderLoopUI() {
+  if (!current) return;
+  const t = current, L = { ...LOOP_DEFAULT, ...(t.loop || {}) }, bpm = bpmOf(t);
+  $('#loopToggle').classList.toggle('on', !!(L.on && bpm));
+  if (document.activeElement !== $('#bpmInput')) $('#bpmInput').value = t.bpm || '';
+  $('#loopCtl').classList.toggle('off', !(L.on && bpm));
+  $('#vBars').textContent = loopInfo ? loopInfo.bars : '–';
+  $('#vDown').textContent = (L.downbeat || 0).toFixed(3) + ' s';
+  $('#downAuto').classList.toggle('on', !L.manualDown);
+  document.querySelectorAll('#tailSeg button').forEach(b => b.classList.toggle('on', (b.dataset.wrap === '1') === !!L.wrap));
+  let hint;
+  if (!bpm) hint = 'Indique le BPM (ou tape le tempo avec Tap) pour activer la loop.';
+  else if (!L.on) hint = 'Loop désactivée : le son est lu jusqu\'au bout.';
+  else if (!loopInfo) hint = 'Calcul de la boucle…';
+  else {
+    hint = `${loopInfo.bars} mesure${loopInfo.bars > 1 ? 's' : ''} · ${loopInfo.len.toFixed(2)} s`;
+    if (L.downbeat > 0.001) hint += ` · intro de ${L.downbeat.toFixed(2)} s jouée une fois`;
+    hint += L.wrap ? ' · queue de reverb recollée au début' : ' · queue coupée';
+    if (E.kind === 'element') hint += ' (en mode Tempo, la boucle est moins précise)';
+  }
+  $('#loopHint').textContent = hint;
+  renderChips();
+}
+function loopSet(patch) {
+  current.loop = { ...LOOP_DEFAULT, ...(current.loop || {}), ...patch };
+  renderLoopUI(); applyLoop();
+}
+function setBpm(v) {
+  const b = parseFloat(String(v).replace(',', '.'));
+  if (!(b >= 40 && b <= 250)) { toast('BPM entre 40 et 250'); renderLoopUI(); return; }
+  const had = !!bpmOf(current);
+  current.bpm = String(Math.round(b * 100) / 100);
+  const L = { ...LOOP_DEFAULT, ...(current.loop || {}) };
+  loopSet({ manualBars: false, on: L.on || !had });
+  renderPlayer(); dbPut(current);
+}
+$('#loopToggle').onclick = () => {
+  if (!bpmOf(current)) { toast('Indique d\'abord le BPM'); $('#bpmInput').focus(); return; }
+  loopSet({ on: !(current.loop && current.loop.on) });
+  toast(current.loop.on ? 'Loop ∞ activée' : 'Loop désactivée');
+};
+$('#bpmInput').addEventListener('change', e => setBpm(e.target.value));
+$('#bpmInput').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
+$('#bpmUp').onclick = () => setBpm((bpmOf(current) || 119) + 1);
+$('#bpmDown').onclick = () => setBpm((bpmOf(current) || 121) - 1);
+let taps = [];
+$('#bpmTap').onclick = () => {
+  const now = performance.now();
+  if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
+  taps.push(now); taps = taps.slice(-8);
+  if (taps.length < 4) return toast(`Tap ${taps.length}… continue en rythme`, 1200);
+  const iv = (taps[taps.length - 1] - taps[0]) / (taps.length - 1);
+  let b = 60000 / iv; b = Math.abs(b - Math.round(b)) < 0.4 ? Math.round(b) : Math.round(b * 10) / 10;
+  setBpm(b); toast(`${b} BPM`, 1200);
+};
+$('#barsUp').onclick = () => loopInfo && loopSet({ bars: Math.min(loopInfo.maxBars, loopInfo.bars + 1), manualBars: true });
+$('#barsDown').onclick = () => loopInfo && loopSet({ bars: Math.max(1, loopInfo.bars - 1), manualBars: true });
+$('#downHere').onclick = () => { loopSet({ downbeat: E.time(), manualDown: true, manualBars: false }); toast(`Downbeat posé à ${E.time().toFixed(3)} s`); };
+document.querySelectorAll('#tabLoop [data-nudge]').forEach(b => b.onclick = () => {
+  const L = current.loop || {};
+  loopSet({ downbeat: Math.max(0, (L.downbeat || 0) + +b.dataset.nudge), manualDown: true });
+});
+$('#downZero').onclick = () => loopSet({ downbeat: 0, manualDown: true, manualBars: false });
+$('#downAuto').onclick = () => { loopSet({ manualDown: false, manualBars: false }); toast('Downbeat et mesures en automatique'); };
+$('#tailSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) loopSet({ wrap: b.dataset.wrap === '1' }); });
+
 $('#bShare').onclick = () => {
   if (!currentFile) return toast('Fichier en préparation, réessaie');
   if (navigator.canShare && navigator.canShare({ files: [currentFile] })) {
@@ -1288,12 +1507,18 @@ function drawWave() {
     g2.fillStyle = 'rgba(255,107,53,.14)'; g2.fillRect(a, 0, b - a, h);
     g2.fillStyle = ACCENT; g2.fillRect(a, 0, 1.5 * dpr, h); if (current.loopB != null) g2.fillRect(b - 1.5 * dpr, 0, 1.5 * dpr, h);
   }
+  const LI = current.loopB == null && current.loop && current.loop.on ? loopInfo : null;
+  if (LI) {
+    const a = LI.start / dur * w, b = LI.end / dur * w;
+    g2.fillStyle = ACCENT; g2.fillRect(a, 0, 1.5 * dpr, h); g2.fillRect(Math.min(w, b) - 1.5 * dpr, 0, 1.5 * dpr, h);
+  }
   const bw = 2 * dpr, gap = 1.6 * dpr, n = Math.floor(w / (bw + gap));
   for (let i = 0; i < n; i++) {
     const p0 = Math.floor(i / n * peaks.length), p1 = Math.max(p0 + 1, Math.floor((i + 1) / n * peaks.length));
     let m = 0; for (let j = p0; j < p1; j++) if (peaks[j] > m) m = peaks[j];
     const bh = Math.max(2 * dpr, m * h * 0.94), x = i * (bw + gap);
-    g2.fillStyle = x + bw <= px ? ACCENT : 'rgba(255,255,255,.26)';
+    const outLoop = LI && (x < LI.start / dur * w - 1 || x > LI.end / dur * w);
+    g2.fillStyle = outLoop ? 'rgba(255,255,255,.09)' : x + bw <= px ? ACCENT : 'rgba(255,255,255,.26)';
     g2.fillRect(x, (h - bh) / 2, bw, bh);
   }
   g2.fillStyle = '#fff'; g2.fillRect(Math.min(w - 2 * dpr, Math.max(0, px - dpr)), 0, 2 * dpr, h);
@@ -1387,7 +1612,9 @@ $('#eSave').onclick = async () => {
   const t = editing; if (!t) return;
   t.title = $('#eTitle').value.trim() || t.title;
   t.artist = $('#eArtist').value.trim();
+  const hadBpm = !!bpmOf(t);
   t.bpm = $('#eBpm').value.trim(); t.key = $('#eKey').value.trim(); t.notes = $('#eNotes').value;
+  if (!hadBpm && bpmOf(t)) t.loop = { ...LOOP_DEFAULT, ...(t.loop || {}), on: true };
   t.project = $('#eProject').value.trim() || IMPORTS;
   if (t.artist) localStorage.setItem('platine.artist', t.artist);
   if (pendingCover instanceof Blob) {
@@ -1399,7 +1626,7 @@ $('#eSave').onclick = async () => {
   }
   await dbPut(t);
   closeEdit(); renderAll();
-  if (current && current.id === t.id) { renderPlayer(); updateMini(); updateMediaSession(); }
+  if (current && current.id === t.id) { applyLoop(); renderPlayer(); updateMini(); updateMediaSession(); }
 };
 $('#eDelete').onclick = async () => {
   const t = editing; if (!t) return;
@@ -1453,6 +1680,8 @@ $('#buildInfo').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · 
     for (const t of tracks) {
       t.settings = { ...DEFAULTS, ...(t.settings || {}) };
       t.project = t.project || IMPORTS;
+      if (!t.bpm) t.bpm = guessMeta(t.fileName || t.title).bpm;
+      if (!t.loop) t.loop = { ...LOOP_DEFAULT, on: !!t.bpm };
       if (t.hasCover) { const b = await blobGet('cover:' + t.id); if (b) coverURLs.set(t.id, URL.createObjectURL(b)); }
     }
     playlists = await plAll();

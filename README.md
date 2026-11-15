@@ -5,6 +5,8 @@ Tes sons restent **sur ton téléphone** : rien n'est envoyé en ligne.
 
 ## Fonctions (v2)
 
+- **Varispeed en temps réel** (Web Audio) : la vitesse change pendant la lecture sans coupure, boutons Réinitialiser
+- **Loop ∞ calée sur le BPM** (onglet Loop) : BPM lu dans le nom (`139bp`, `140bpm`, `141BPM`…) ou Tap tempo, downbeat détecté automatiquement (ou « Poser ici »), mesures calculées sans la queue de reverb, queue recollée au début ou coupée. Activée par défaut quand le fichier a un BPM.
 - **Synchro d'un dossier** (bouton ⟳) : choisis ton dossier LOOPS dans iCloud Drive. Seuls les nouveaux sons et ceux qui ont changé sont importés, et chaque sous-dossier devient un projet. Tu peux aussi choisir un seul sous-dossier (une semaine) : il n'y aura pas de doublons. Les fichiers MIDI sont ignorés.
 - **Projets** classés du plus récent au plus ancien, en vue liste, avec une recherche par nom, BPM ou tonalité
 - **Playlists** : bouton ≡+ sur un son (dans une liste ou dans le lecteur), ordre modifiable, lecture enchaînée dans l'ordre de la playlist
