@@ -148,6 +148,8 @@ svg{display:block}
 .bpm-in:focus{border-color:var(--accent)}
 .tap{background:var(--accent-soft)!important;color:var(--accent)}
 #loopCtl.off{opacity:.45;pointer-events:none}
+.wave.sel{outline:2px dashed var(--accent);outline-offset:4px;border-radius:6px}
+.wave-hint{text-align:center;font-size:14px;color:var(--accent);margin-top:10px;font-weight:600}
 
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:38px;background:transparent;touch-action:none}
 input[type=range]:focus{outline:none}
@@ -319,6 +321,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 
     <div class="wave" id="waveBox"><canvas id="wave"></canvas></div>
     <div class="times"><b id="tCur">0:00</b><span id="tDur">0:00</span></div>
+    <p class="wave-hint hidden" id="waveHint"></p>
 
     <div class="transport">
       <button class="t-btn small" id="bRepeat" aria-label="Répéter">
@@ -383,8 +386,10 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
       <div id="tabLoop" class="hidden">
         <div class="ctl row"><span>Loop ∞</span><button class="switch" id="loopToggle" aria-label="Activer la loop"><i></i></button></div>
         <p class="hint" id="loopHint"></p>
-        <div class="ctl row"><span>BPM</span>
-          <div class="stepper"><button id="bpmDown">−</button><input id="bpmInput" class="bpm-in" inputmode="decimal" autocomplete="off"><button id="bpmUp">+</button><button id="bpmTap" class="tap">Tap</button></div>
+        <button class="soft" id="testJoin" style="margin-bottom:10px">▶ Tester la jonction (3 s avant la fin)</button>
+        <div class="ctl"><div class="ctl row" style="padding:0;margin:0"><span>BPM</span>
+          <div class="stepper"><button id="bpmDown">−</button><input id="bpmInput" class="bpm-in" inputmode="decimal" autocomplete="off"><button id="bpmUp">+</button><button id="bpmTap" class="tap">Tap</button></div></div>
+          <div class="quick" style="margin:10px 0 8px"><button id="bpmDetect" class="accent">Détecter le tempo</button><button id="bpmHalf">÷2</button><button id="bpmDouble">×2</button></div>
         </div>
         <div id="loopCtl">
           <div class="ctl row"><span>Mesures</span>
@@ -447,7 +452,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 7, version: '2.5', date: '15/11/2026' };
+const BUILD = { n: 8, version: '2.6', date: '15/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -788,6 +793,42 @@ function buildLoopBuffer(buf, downbeat, bars, bpm, wrap) {
   }
   return { buffer: out, start: d / sr, end: end / sr };
 }
+/* Détection du tempo : on repère les attaques (kicks, snares…) puis on cherche
+   l'écart qui revient le plus souvent entre elles (autocorrélation), en
+   privilégiant les tempos autour de 120 BPM pour éviter les doubles/moitiés. */
+function detectTempo(buf) {
+  const sr = buf.sampleRate, hop = 512, env = envelope(buf, hop), n = env.length, fps = sr / hop;
+  const on = new Float32Array(n);
+  for (let i = 1; i < n; i++) on[i] = Math.max(0, Math.log(1 + 100 * env[i]) - Math.log(1 + 100 * env[i - 1]));
+  const w = Math.max(1, Math.round(fps * 0.2)), pre = new Float64Array(n + 1), o = new Float32Array(n);
+  for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + on[i];
+  for (let i = 0; i < n; i++) { const a = Math.max(0, i - w), b = Math.min(n, i + w + 1); o[i] = Math.max(0, on[i] - (pre[b] - pre[a]) / (b - a)); }
+  const maxL = Math.min(n - 1, Math.ceil(fps * 60 / 55 * 4)), ac = new Float32Array(maxL + 2);
+  for (let L = Math.floor(fps * 60 / 210); L <= maxL; L++) { let s = 0; for (let i = L; i < n; i++) s += o[i] * o[i - L]; ac[L] = s / (n - L); }
+  const at = x => { const i = Math.floor(x); return i + 1 > maxL ? 0 : ac[i] + (ac[i + 1] - ac[i]) * (x - i); };
+  let best = 0, bestS = -1;
+  for (let b = 60; b <= 200; b += 0.1) {
+    const L = fps * 60 / b;
+    const s = (at(L) + 0.5 * at(2 * L) + 0.25 * at(4 * L)) * Math.exp(-0.5 * Math.pow(Math.log2(b / 120) / 0.9, 2));
+    if (s > bestS) { bestS = s; best = b; }
+  }
+  if (bestS <= 0) return 0;
+  // Affinage : analyse plus fine (≈3 ms) autour du tempo trouvé, en vérifiant
+  // que les attaques retombent juste sur 1 à 16 temps plus loin.
+  const hop2 = 128, fps2 = sr / hop2, maxN = Math.min(buf.length, Math.round(sr * 60));
+  const env2 = envelope(buf.length > maxN ? { sampleRate: sr, length: maxN, numberOfChannels: buf.numberOfChannels, getChannelData: c => buf.getChannelData(c).subarray(0, maxN) } : buf, hop2);
+  const n2 = env2.length, o2 = new Float32Array(n2);
+  for (let i = 1; i < n2; i++) o2[i] = Math.max(0, Math.log(1 + 100 * env2[i]) - Math.log(1 + 100 * env2[i - 1]));
+  const acAt = x => { const L = Math.floor(x), f = x - L; if (L + 1 >= n2) return 0; let s0 = 0, s1 = 0; for (let i = L + 1; i < n2; i++) { s0 += o2[i] * o2[i - L]; s1 += o2[i] * o2[i - L - 1]; } return (s0 * (1 - f) + s1 * f) / (n2 - L); };
+  let fine = best, fineS = -1;
+  for (let b = best - 1.5; b <= best + 1.5; b += 0.05) {
+    const L = fps2 * 60 / b; let sc = 0;
+    for (let k = 1; k <= 16; k++) sc += acAt(k * L);
+    if (sc > fineS) { fineS = sc; fine = b; }
+  }
+  return Math.abs(fine - Math.round(fine)) < 0.3 ? Math.round(fine) : Math.round(fine * 10) / 10;
+}
+
 let loopInfo = null;     // infos affichées (mesures, durée…)
 async function applyLoop() {
   const t = current; if (!t) return;
@@ -1203,7 +1244,7 @@ async function loadTrack(t, autoplay) {
     if (!b) return toast('Fichier introuvable');
     url = URL.createObjectURL(b); audioURLs.set(t.id, url);
   }
-  E.reset(); loopInfo = null;
+  E.reset(); loopInfo = null; if (typeof setSel === 'function') setSel(null);
   E.rate = t.settings.rate;
   E.loopA = t.loopA ?? null; E.loopB = t.loopB ?? null;
   E.repeatOne = repeatMode === 'one';
@@ -1399,8 +1440,48 @@ $('#bRepeat').onclick = () => {
   toast({ off: 'Répétition désactivée', all: 'Répéter tous les sons', one: 'Répéter ce son' }[repeatMode]);
   renderPlayer();
 };
+/* Grille des mesures (si le BPM est connu) */
+function barGrid() {
+  const bpm = bpmOf(current); if (!bpm) return null;
+  const L = { ...LOOP_DEFAULT, ...(current.loop || {}) };
+  return { start: L.downbeat || 0, bar: 240 / bpm };
+}
+let selMode = null;     // sélection de boucle par mesures : 'A' puis 'B'
+function setSel(m) {
+  selMode = m;
+  $('#waveBox').classList.toggle('sel', !!m);
+  $('#waveHint').classList.toggle('hidden', !m);
+  $('#waveHint').textContent = m === 'A' ? 'Touche la 1re mesure de la boucle (A)' : m === 'B' ? 'Touche la dernière mesure de la boucle (B)' : '';
+}
+function pickBar(t) {
+  const g = barGrid(), dur = E.duration() || current.duration;
+  const idx = Math.max(0, Math.floor((t - g.start) / g.bar));
+  const a = t < g.start ? 0 : g.start + idx * g.bar;
+  return { a, b: Math.min(dur, t < g.start ? g.start : g.start + (idx + 1) * g.bar) };
+}
+function tapBar(t) {
+  const c = current, g = barGrid(), p = pickBar(t);
+  if (selMode === 'A') {
+    c.loopA = p.a; c.loopB = null; E.loopA = E.loopB = null; E.refreshLoop();
+    E.seek(p.a); if (!E.playing) E.play();
+    setSel('B');
+  } else {
+    let A = c.loopA, B = p.b;
+    if (B <= A + 0.01) { B = A + g.bar; A = p.a; }             // touché avant A : on inverse
+    c.loopA = A; c.loopB = Math.min(B, E.duration() || B);
+    E.loopA = c.loopA; E.loopB = c.loopB;
+    E.seek(Math.max(c.loopA, c.loopB - 3)); if (!E.playing) E.play();   // 3 s avant la fin → enchaîne sur A
+    setSel(null);
+    const nb = Math.round((c.loopB - c.loopA) / g.bar);
+    toast(`Boucle A-B : ${nb} mesure${nb > 1 ? 's' : ''} — écoute la jonction`, 3000);
+    saveSoon();
+  }
+  renderPlayer();
+}
 $('#bLoop').onclick = () => {
   const t = current, now = E.time();
+  if (selMode) { setSel(null); t.loopA = t.loopB = null; E.loopA = E.loopB = null; E.refreshLoop(); renderPlayer(); return; }
+  if (t.loopA == null && barGrid()) { setSel('A'); return; }      // sélection par mesures
   if (t.loopA == null) { t.loopA = now; toast('Point A posé — appuie encore pour B'); }
   else if (t.loopB == null) {
     if (now <= t.loopA + 0.2) { t.loopB = t.loopA; t.loopA = Math.max(0, now); if (t.loopB - t.loopA < 0.2) { t.loopA = t.loopB = null; } }
@@ -1443,13 +1524,13 @@ function loopSet(patch) {
   current.loop = { ...LOOP_DEFAULT, ...(current.loop || {}), ...patch };
   renderLoopUI(); applyLoop();
 }
-function setBpm(v) {
+function setBpm(v, enableLoop = true) {
   const b = parseFloat(String(v).replace(',', '.'));
   if (!(b >= 40 && b <= 250)) { toast('BPM entre 40 et 250'); renderLoopUI(); return; }
   const had = !!bpmOf(current);
   current.bpm = String(Math.round(b * 100) / 100);
   const L = { ...LOOP_DEFAULT, ...(current.loop || {}) };
-  loopSet({ manualBars: false, on: L.on || !had });
+  loopSet({ manualBars: false, on: L.on || (!had && enableLoop) });
   renderPlayer(); dbPut(current);
 }
 $('#loopToggle').onclick = () => {
@@ -1460,6 +1541,21 @@ $('#loopToggle').onclick = () => {
 $('#bpmInput').addEventListener('change', e => setBpm(e.target.value));
 $('#bpmInput').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
 $('#bpmUp').onclick = () => setBpm((bpmOf(current) || 119) + 1);
+$('#bpmDetect').onclick = async () => {
+  const t = current; toast('Analyse du tempo…', 0);
+  try {
+    const buf = await getBuffer(t); if (current !== t) return;
+    const b = detectTempo(buf);
+    if (!b) return toast('Tempo introuvable : utilise Tap');
+    setBpm(b, false); toast(`Tempo détecté : ${b} BPM (÷2 ou ×2 si c'est le double ou la moitié)`, 4000);
+  } catch (e) { console.warn(e); toast('Analyse impossible'); }
+};
+$('#bpmHalf').onclick = () => bpmOf(current) && setBpm(bpmOf(current) / 2, false);
+$('#bpmDouble').onclick = () => bpmOf(current) && setBpm(bpmOf(current) * 2, false);
+$('#testJoin').onclick = () => {
+  const L = E.loopRange(); if (!L) return toast('Aucune boucle active');
+  E.seek(Math.max(L[0], L[1] - 3)); if (!E.playing) E.play();
+};
 $('#bpmDown').onclick = () => setBpm((bpmOf(current) || 121) - 1);
 let taps = [];
 $('#bpmTap').onclick = () => {
@@ -1524,13 +1620,29 @@ function drawWave() {
     g2.fillStyle = outLoop ? 'rgba(255,255,255,.09)' : x + bw <= px ? ACCENT : 'rgba(255,255,255,.26)';
     g2.fillRect(x, (h - bh) / 2, bw, bh);
   }
+  const G = barGrid();
+  if (G) {                                                   // lignes des mesures
+    const pxBar = G.bar / dur * w; let k = 1; while (pxBar * k < 6 * dpr) k *= 2;
+    for (let i = 0, tt = G.start; tt < dur; i++, tt = G.start + i * G.bar) {
+      if (i % k) continue;
+      const x = tt / dur * w, strong = i % (4 * k) === 0;
+      g2.fillStyle = selMode ? (strong ? 'rgba(255,107,53,.75)' : 'rgba(255,107,53,.4)') : (strong ? 'rgba(255,255,255,.32)' : 'rgba(255,255,255,.13)');
+      g2.fillRect(x, 0, Math.max(1, dpr * (strong ? 1 : 0.75)), h);
+    }
+  }
   g2.fillStyle = '#fff'; g2.fillRect(Math.min(w - 2 * dpr, Math.max(0, px - dpr)), 0, 2 * dpr, h);
 }
 (() => {
   const box = $('#waveBox');
   const timeAt = e => { const r = box.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1) * (current.duration || E.duration() || 0); };
-  box.addEventListener('pointerdown', e => { if (!current) return; seeking = true; seekT = timeAt(e); box.setPointerCapture(e.pointerId); });
+  let downX = 0;
+  box.addEventListener('pointerdown', e => {
+    if (!current) return;
+    if (selMode) { downX = e.clientX; return; }
+    seeking = true; seekT = timeAt(e); box.setPointerCapture(e.pointerId);
+  });
   box.addEventListener('pointermove', e => { if (seeking) seekT = timeAt(e); });
+  box.addEventListener('pointerup', e => { if (selMode && Math.abs(e.clientX - downX) < 12) tapBar(timeAt(e)); });
   const end = () => { if (!seeking) return; seeking = false; E.seek(seekT); updatePosition(); };
   box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
 })();
