@@ -633,7 +633,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 29, version: '3.6', date: '16/11/2026' };
+const BUILD = { n: 30, version: '3.6.1', date: '16/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -878,8 +878,10 @@ const E = {
     keepAlive.play().catch(() => {});
     if (this.scratching) { this.playing = true; S.setTarget(this.signedRate()); this.onstate(); return; }
     if (this.kind === 'buffer') {
+      audio.pause(); this.muteEl();
       if (!this.playing) { this.playing = true; this.startBuffer(this.rev ? (this.p0 <= 0.02 ? this.buf.duration : this.p0) : (this.p0 >= this.buf.duration - 0.02 ? 0 : this.p0)); }
     } else {
+      this.stopSource(); this.muteEl();
       this.playing = true;
       const p = audio.play(); if (p && p.catch) p.catch(err => console.warn(err));
     }
@@ -887,10 +889,18 @@ const E = {
   },
   pause() {
     if (this.scratching) { this.playing = false; S.setTarget(0); keepAlive.pause(); this.onstate(); return; }
-    if (this.kind === 'buffer') { if (this.playing) { this.p0 = this.time(); this.stopSource(); } }
-    else audio.pause();
+    if (this.kind === 'buffer' && this.playing) this.p0 = this.time();
+    this.silence();
     this.playing = false; keepAlive.pause(); this.onstate();
   },
+  // Coupe toutes les sources possibles, même une lecture « parasite » en double
+  silence() {
+    this.stopSource();
+    try { audio.pause(); } catch (e) {}
+    if (S.node && !S.active) S.node.port.postMessage({ type: 'stop' });
+  },
+  // En mode Web Audio, le lecteur natif doit rester muet (évite tout son en double)
+  muteEl() { audio.muted = this.kind === 'buffer'; },
   seek(t) {
     if (this.scratching) { const was = this.playing; S.abort(); this.p0 = t; if (this.kind === 'buffer' && was) { this.startBuffer(clamp(t, 0, this.duration())); return; } }
     t = clamp(t, 0, this.duration());
@@ -904,22 +914,22 @@ const E = {
     if (this.src) this.src.playbackRate.setValueAtTime(r, actx.currentTime);
     if (this.scratching && this.playing) S.setTarget(this.signedRate());
   },
-  refreshLoop() { if (this.kind === 'buffer' && this.playing) this.startBuffer(this.time()); audio.loop = this.repeatOne; },
+  refreshLoop() { if (this.kind === 'buffer' && this.playing && !this.scratching) this.startBuffer(this.time()); audio.loop = this.repeatOne; },
   toBuffer(buf) {
     const pos = this.kind === 'element' ? (audio.currentTime || 0) : this.time(), was = this.playing;
     this.base = buf; this.buf = this.loopBuf || buf;
     if (this.kind === 'buffer') return;
-    this.kind = 'buffer'; audio.pause(); this.p0 = pos;
-    if (was) { ctx(); this.startBuffer(pos); }
+    this.kind = 'buffer'; audio.pause(); this.muteEl(); this.p0 = pos;
+    if (was && !this.scratching) { ctx(); this.startBuffer(pos); }      // pendant un scratch, le disque rend la main lui-même
   },
   toElement() {
     if (this.kind === 'element') return;
     const pos = this.time(), was = this.playing;
-    this.stopSource(); this.kind = 'element';
+    this.stopSource(); this.kind = 'element'; this.muteEl();
     audio.currentTime = pos;
     if (was) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
   },
-  reset() { S.abort(); S.loadedFor = null; this.scratching = false; this.stopSource(); audio.pause(); this.playing = false; this.p0 = 0; this.buf = this.base = this.loopBuf = null; this.loopInf = null; this.kind = 'element'; },
+  reset() { S.abort(); S.loadedFor = null; this.scratching = false; this.stopSource(); audio.pause(); this.playing = false; this.p0 = 0; this.buf = this.base = this.loopBuf = null; this.loopInf = null; this.kind = 'element'; this.muteEl(); },
   /* Loop ∞ : on remplace le son par sa version « bouclable » (même début, queue recollée) */
   inLoop(pos) { const L = this.loopInf; return L && pos >= L.end ? L.start + ((pos - L.start) % (L.end - L.start)) : pos; },
   setLoopInf(lb) {
@@ -937,7 +947,10 @@ const E = {
   }
 };
 // Le lecteur natif peut être mis en pause par iOS (appel, autre app…)
-audio.addEventListener('play',  () => { if (E.kind === 'element' && !E.playing) { E.playing = true; E.onstate(); } });
+audio.addEventListener('play',  () => {
+  if (E.kind === 'buffer' || E.scratching) { audio.pause(); slog('Audio en double évité (lecteur natif relancé en fond)'); return; }
+  if (!E.playing) { E.playing = true; E.onstate(); }
+});
 audio.addEventListener('pause', () => { if (E.kind === 'element' && E.playing && !audio.ended && !E.scratching) { E.playing = false; E.onstate(); } });
 audio.addEventListener('ended', () => { if (E.kind === 'element') { E.playing = false; E.onstate(); E.onended(); } });
 
@@ -1849,6 +1862,7 @@ async function loadTrack(t, autoplay, startAt = 0) {
   applyRate();
   applyGain(autoGain(t));
   if (wantBuffer() && decoded.has(t.id)) { E.kind = 'buffer'; E.buf = E.base = decoded.get(t.id); }
+  E.muteEl();
   if (startAt > 0) {                               // bascule de version : même moment musical
     if (E.kind === 'buffer') E.p0 = startAt;
     else { const set = () => { audio.currentTime = startAt; }; if (audio.readyState >= 1) set(); else audio.addEventListener('loadedmetadata', set, { once: true }); }
