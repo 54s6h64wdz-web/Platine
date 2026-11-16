@@ -249,6 +249,16 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 /* ---------- App Mac ---------- */
 html:not(.desktop) .desk-only{display:none!important}
 .desktop #library,.desktop #collection{padding-top:46px}
+#boot{position:fixed;inset:0;z-index:100;background:var(--bg);display:grid;place-items:center;transition:opacity .3s}
+#boot.out{opacity:0;pointer-events:none}
+.boot-in{text-align:center}
+.boot-in h1{font-size:44px;font-weight:700;letter-spacing:-.03em}
+.boot-in h1 span{color:var(--accent)}
+.boot-in p{font-family:var(--mono);font-size:13px;color:var(--muted);margin-top:2px}
+.boot-bar{width:120px;height:3px;border-radius:3px;background:var(--surface2);margin:26px auto 12px;overflow:hidden}
+.boot-bar i{display:block;width:40%;height:100%;border-radius:3px;background:var(--accent);animation:bootbar 1s var(--ease) infinite}
+@keyframes bootbar{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
+.boot-in small{font-size:12px;color:var(--muted)}
 #dragbar{display:none}
 .desktop #dragbar{display:block;position:fixed;top:0;left:0;right:0;height:40px;z-index:15;-webkit-app-region:drag}
 .desktop button,.desktop input,.desktop a,.desktop .modal-card,.desktop .seg{-webkit-app-region:no-drag}
@@ -304,6 +314,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <body>
 
 <!-- ===== Bibliothèque ===== -->
+<div id="boot"><div class="boot-in"><h1>Platine<span>.</span></h1><p>by genetic</p><div class="boot-bar"><i></i></div><small id="bootTxt">Recherche de mise à jour…</small></div></div>
 <div id="dragbar"></div>
 <section id="library">
   <header class="lib-head">
@@ -603,7 +614,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 27, version: '3.5', date: '16/11/2026' };
+const BUILD = { n: 28, version: '3.5.1', date: '16/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -3046,8 +3057,8 @@ async function checkUpdate() {
     else { b.textContent = 'Mettre à jour'; b.classList.remove('new'); }
   } catch (e) {}
 }
-async function forceUpdate() {
-  toast('Mise à jour de l\'app…', 0);
+async function forceUpdate(silent) {
+  if (silent !== true) toast('Mise à jour de l\'app…', 0);
   try {
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
@@ -3058,7 +3069,29 @@ async function forceUpdate() {
   location.replace(location.pathname + '?v=' + Date.now());   // nouvelle adresse = pas de copie en cache
 }
 $('#btnUpdate').onclick = forceUpdate;
-checkUpdate();
+/* À l'ouverture : petit écran de chargement, on regarde s'il y a une mise à jour.
+   Si oui, on la télécharge tout de suite ; hors connexion (ou réseau trop lent),
+   l'app s'ouvre directement et la mise à jour se fera à la prochaine ouverture. */
+(async function bootCheck() {
+  const done = () => { $('#boot').classList.add('out'); setTimeout(() => $('#boot').remove(), 400); };
+  if (!location.protocol.startsWith('http') || navigator.onLine === false) return done();
+  try {
+    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 2500);
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store', signal: ctl.signal });
+    clearTimeout(to);
+    const v = r.ok ? await r.json() : null;
+    if (v && v.build > BUILD.n) {
+      const last = JSON.parse(localStorage.getItem('platine.updTry') || 'null');
+      if (!(last && last.build === v.build && Date.now() - last.at < 10 * 60000)) {   // évite une boucle si GitHub n'a pas fini de publier
+        localStorage.setItem('platine.updTry', JSON.stringify({ build: v.build, at: Date.now() }));
+        $('#bootTxt').textContent = `Mise à jour vers le build ${v.build}…`;
+        return forceUpdate(true);
+      }
+      const b = $('#btnUpdate'); b.textContent = `Nouvelle version : build ${v.build} → mettre à jour`; b.classList.add('new');
+    }
+  } catch (e) {}
+  done();
+})();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   checkUpdate();
