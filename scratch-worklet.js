@@ -25,7 +25,9 @@ class ScratchProcessor extends AudioWorkletProcessor {
       case 'load': this.ch = d.channels; this.len = d.channels[0].length; this.bsr = d.sampleRate; break;
       case 'start':
         this.pos = d.pos * this.bsr; this.target = this.pos; this.v = (d.rate || 0) * k;
-        this.vmax = (d.vmax || 2) * k; this.brake = k / (0.28 * sampleRate);   // tape stop : ×1 → 0 en 0,28 s
+        this.cfg = d.cfg || {};                        // réglages de la platine (Paramètres)
+        this.vmax = (this.cfg.cap || d.vmax || 2) * k;
+        this.brake = k / (Math.max(0.03, this.cfg.tapeStop || 0.28) * sampleRate);   // tape stop : ×1 → 0 en 0,28 s par défaut
         this.mode = 'hold'; this.gTarget = 1; this.stopping = false; this.loop = d.loop; this.ended = false;
         break;
       case 'drag':                                   // d.delta : rotation du disque depuis le toucher (en secondes de son)
@@ -33,6 +35,7 @@ class ScratchProcessor extends AudioWorkletProcessor {
         if (this.mode === 'follow') this.target = this.anchor + d.delta * this.bsr;
         break;
       case 'release':                                // lancer : vitesse de départ donnée par le geste
+        if (d.cfg) { this.cfg = d.cfg; this.vmax = (d.cfg.cap || 2) * k; }
         if (typeof d.v0 === 'number') this.v = d.v0 * k;
         this.mode = 'spin'; this.tv = d.targetRate * k; this.loop = d.loop; this.settled = false; break;
       case 'target': this.tv = d.targetRate * k; this.settled = false; break;
@@ -45,8 +48,9 @@ class ScratchProcessor extends AudioWorkletProcessor {
     const sr = sampleRate, bsr = this.bsr;
     const kSlew = 1 - Math.exp(-1 / (sr * 0.08)), follow = 1 / (sr * 0.07), vmax = this.vmax || 2 * bsr / sr;
     const one = bsr / sr;                            // vitesse ×1 (échantillons du son par échantillon de sortie)
-    const acc = (this.tv === 0 ? 0.7 : 0.45) * one / sr;   // couple du moteur : 0,45× par seconde (frein : 0,7×/s)
-    const near = 0.18 * one, kEase = 1 - Math.exp(-1 / (sr * 0.35));     // inertie du plateau au lâcher
+    const C = this.cfg || {};
+    const acc = (this.tv === 0 ? (C.brake || 0.7) : (C.torque || 0.45)) * one / sr;   // couple du moteur : 0,45× par seconde (frein : 0,7×/s)
+    const near = 0.18 * one, kEase = 1 - Math.exp(-1 / (sr * Math.max(0.02, C.ease ?? 0.35)));     // arrivée en douceur
     const kG = 1 - Math.exp(-1 / (sr * 0.004));
     const a = 0.995, L = this.loop, nc = this.ch.length, last = this.len - 2;
     for (let i = 0; i < n; i++) {

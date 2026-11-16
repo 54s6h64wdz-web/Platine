@@ -226,6 +226,13 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 .vstar{flex:none;width:36px;height:36px;border-radius:50%;background:var(--surface2);font-size:18px;line-height:1;color:var(--muted);display:grid;place-items:center}
 .vstar.on{color:var(--accent)}
 .vstar.on.fixed{background:rgba(255,107,53,.16)}
+.modal.nonmodal{background:transparent;pointer-events:none;animation:none}
+.modal.nonmodal .modal-card{pointer-events:auto;max-height:42%;overflow-y:auto;box-shadow:0 -12px 40px rgba(0,0,0,.65)}
+.ds-row{padding:10px 2px 8px;border-bottom:1px solid var(--line)}
+.ds-top{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;font-weight:600}
+.ds-top b{font-family:var(--mono);color:var(--accent);font-weight:500;font-size:13px}
+.ds-row small{display:block;font-size:12px;color:var(--muted);margin:2px 0 6px;line-height:1.35}
+.modal .ds-row input[type=range]{width:100%;margin:0;padding:0;border:0;border-radius:0;background:transparent;height:34px}
 .vmain{font-style:normal;color:var(--accent);margin-right:5px;font-size:12px}
 .vpill.on .vmain{color:#c2410c}
 .grid.is-list{display:block}
@@ -399,7 +406,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
     <button class="round" id="pClose" aria-label="Fermer">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
     </button>
-    <div class="p-actions"><button class="round desk-only" id="pFinder" aria-label="Afficher dans le Finder" title="Afficher dans le Finder"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button><button class="round" id="pShare" aria-label="Partager"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button><button class="pill" id="pEdit">Modifier</button></div>
+    <div class="p-actions"><button class="round" id="pDisc" aria-label="Réglages de la platine" title="Réglages de la platine"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button><button class="round desk-only" id="pFinder" aria-label="Afficher dans le Finder" title="Afficher dans le Finder"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button><button class="round" id="pShare" aria-label="Partager"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button><button class="pill" id="pEdit">Modifier</button></div>
   </div>
   <div class="p-scroll">
     <div class="p-meta" id="pMeta">
@@ -586,6 +593,8 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
     <p class="hint">Pour les nouveaux sons, et pour les versions dont le BPM est déduit des autres versions.</p>
     <label style="margin-bottom:6px">Downbeat par défaut</label>
     <div class="seg" id="stDown"><button data-d="start">Début du fichier</button><button data-d="auto">Détection auto</button></div>
+    <label style="margin:18px 0 6px">Platine</label>
+    <button class="ctl row" id="stDisc" style="width:100%;text-align:left"><span>Inertie, tape stop, vitesse max…</span><span style="color:var(--accent)">Régler ›</span></button>
     <label style="margin:18px 0 6px">Catégories affichées</label>
     <div id="stTabs"></div>
     <label style="margin:18px 0 6px">Bibliothèque</label>
@@ -596,6 +605,16 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
     <label style="margin:18px 0 6px">Application</label>
     <p class="hint" id="stVersion" style="margin-top:0"></p>
     <div class="quick" style="margin-top:6px"><button id="stUpdate">Mettre à jour l'app</button><a class="quick-a" href="regle.html">Règle d'écran</a></div>
+  </div>
+</div>
+
+<!-- ===== Réglages de la platine (sans fond : on peut tester le disque pendant le réglage) ===== -->
+<div id="discSheet" class="modal nonmodal hidden">
+  <div class="modal-card">
+    <div class="m-head"><button class="pill" id="dsReset">Défaut</button><b>Platine</b><button class="pill accent" id="dsClose">OK</button></div>
+    <div id="dsList"></div>
+    <div class="quick" style="margin-top:12px"><button id="dsCopy">Copier mes réglages</button></div>
+    <p class="hint" style="margin-top:10px">Les réglages s'appliquent tout de suite : fais tourner le disque au-dessus pour tester.</p>
   </div>
 </div>
 
@@ -614,7 +633,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 28, version: '3.5.1', date: '16/11/2026' };
+const BUILD = { n: 29, version: '3.6', date: '16/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -954,10 +973,10 @@ const S = {
     if (E.kind === 'buffer') { if (E.playing) E.stopSource(); } else audio.pause();
     E.scratching = true;
     if (actx.state !== 'running') actx.resume().catch(() => {});
-    this.node.port.postMessage({ type: 'start', pos, rate: r, vmax: 2, loop: E.loopRange() });
+    this.node.port.postMessage({ type: 'start', pos, rate: r, vmax: prefs.disc.cap, cfg: { ...prefs.disc }, loop: E.loopRange() });
   },
   drag(delta) { this.node.port.postMessage({ type: 'drag', delta }); },
-  release(v0) { this.dragging = false; this.node.port.postMessage({ type: 'release', v0, targetRate: E.playing ? E.signedRate() : 0, loop: E.loopRange() }); },
+  release(v0) { this.dragging = false; this.node.port.postMessage({ type: 'release', v0, cfg: { ...prefs.disc }, targetRate: E.playing ? E.signedRate() : 0, loop: E.loopRange() }); },
   setTarget(r) { if (this.active && !this.dragging) this.node.port.postMessage({ type: 'target', targetRate: r }); },
   finish(pos, rate, time) {                  // le plateau a retrouvé sa vitesse : on rend la main au lecteur normal
     if (!this.active) return;
@@ -2562,7 +2581,7 @@ let discHeld = false;
     const now = performance.now(), h = g.hist.filter(p => now - p[0] < 120);
     let w = 0;
     if (h.length >= 2) { const [t0, a0] = h[0], [t1, a1] = h[h.length - 1]; if (t1 > t0) w = (a1 - a0) / ((t1 - t0) / 1000); }
-    const v0 = clamp(w / (360 / TURN_SECONDS), -2, 2);
+    const v0 = clamp(w / (360 / TURN_SECONDS) * prefs.disc.fling, -prefs.disc.cap, prefs.disc.cap);
     S.release(v0); discHeld = false; angle = (g.base + g.acc) % 360; g = null;
   };
   wrap.addEventListener('pointerup', up); wrap.addEventListener('pointercancel', up);
@@ -2701,9 +2720,10 @@ async function deleteTrack(t, byHand) {
 
 
 /* ---------- Paramètres ---------- */
-const PREF_DEFAULT = { autoNorm: true, loopDefault: true, downDefault: 'start', tabs: { prods: true, folders: true, all: true, playlists: true } };
+const DISC_DEFAULT = { cap: 2, fling: 1, tapeStop: 0.28, torque: 0.45, brake: 0.7, ease: 0.35 };   // réglages de la platine
+const PREF_DEFAULT = { autoNorm: true, loopDefault: true, downDefault: 'start', tabs: { prods: true, folders: true, all: true, playlists: true }, disc: { ...DISC_DEFAULT } };
 let prefs = { ...PREF_DEFAULT };
-try { const sv = JSON.parse(localStorage.getItem('platine.prefs') || '{}'); prefs = { ...PREF_DEFAULT, ...sv, tabs: { ...PREF_DEFAULT.tabs, ...(sv.tabs || {}) } }; } catch (e) {}
+try { const sv = JSON.parse(localStorage.getItem('platine.prefs') || '{}'); prefs = { ...PREF_DEFAULT, ...sv, tabs: { ...PREF_DEFAULT.tabs, ...(sv.tabs || {}) }, disc: { ...DISC_DEFAULT, ...(sv.disc || {}) } }; } catch (e) {}
 function savePrefs() { try { localStorage.setItem('platine.prefs', JSON.stringify(prefs)); } catch (e) {} }
 const normGain = t => (t && isFinite(t.peakDb)) ? clamp(Math.round((-0.3 - t.peakDb) * 2) / 2, -24, 12) : 0;
 /* Gain effectif : réglage manuel s'il existe, sinon normalisation auto (si activée) */
@@ -2991,6 +3011,37 @@ async function deskStart() {
   for (const [root, v] of Object.entries(S)) if (v.path) { DESK.watch(v.path); await syncDesktop(v.path, { quiet: true }); }
   analyzeQueue();
 }
+
+/* ---------- Réglages de la platine ---------- */
+const DISC_UI = [   // clé, nom, min, max, pas, unité, explication
+  ['cap', 'Vitesse max du disque', 1, 4, 0.1, '×', 'Plafond en avant et en arrière quand tu lances ou fais tourner le disque.'],
+  ['fling', 'Force du lancer', 0.3, 3, 0.1, '×', 'Plus haut : un petit geste lance le disque plus vite.'],
+  ['tapeStop', 'Tape stop', 0.05, 1.5, 0.01, 's', 'Temps pour que le son s\'arrête quand tu poses le doigt sur le disque.'],
+  ['torque', 'Retour au tempo', 0.05, 3, 0.05, '×/s', 'Force du moteur après un lancer. Plus bas = plus d\'inertie, le disque garde son élan plus longtemps.'],
+  ['brake', 'Freinage en pause', 0.1, 3, 0.05, '×/s', 'Lecture en pause : vitesse à laquelle un disque lancé s\'arrête.'],
+  ['ease', 'Arrivée en douceur', 0, 1.5, 0.05, 's', 'Douceur des derniers instants avant de retrouver la vitesse normale.']
+];
+const discVal = (k, v) => { const d = DISC_UI.find(x => x[0] === k), dec = d[4] < 0.1 ? 2 : 1; const n = (+v).toFixed(dec).replace('.', ','); return d[5] === '×' ? '×' + n : n + ' ' + d[5]; };
+function renderDisc() {
+  $('#dsList').innerHTML = DISC_UI.map(([k, name, mn, mx, st, , hint]) => `<div class="ds-row"><div class="ds-top"><span>${name}</span><b>${discVal(k, prefs.disc[k])}${prefs.disc[k] !== DISC_DEFAULT[k] ? '' : ' · défaut'}</b></div><small>${hint}</small><input type="range" data-k="${k}" min="${mn}" max="${mx}" step="${st}" value="${prefs.disc[k]}" style="--a:0%;--b:${(prefs.disc[k] - mn) / (mx - mn) * 100}%"></div>`).join('');
+}
+function openDisc() { renderDisc(); $('#discSheet').classList.remove('hidden'); }
+$('#dsList').addEventListener('input', e => {
+  const r = e.target.closest('input[type=range]'); if (!r) return;
+  const k = r.dataset.k; prefs.disc[k] = +r.value; savePrefs();
+  r.style.setProperty('--b', (r.value - r.min) / (r.max - r.min) * 100 + '%');
+  r.closest('.ds-row').querySelector('b').textContent = discVal(k, prefs.disc[k]) + (prefs.disc[k] === DISC_DEFAULT[k] ? ' · défaut' : '');
+});
+$('#dsClose').onclick = () => $('#discSheet').classList.add('hidden');
+$('#dsReset').onclick = () => { prefs.disc = { ...DISC_DEFAULT }; savePrefs(); renderDisc(); toast('Réglages par défaut de la platine'); };
+$('#dsCopy').onclick = () => {
+  const txt = 'Réglages platine : ' + DISC_UI.map(([k, name]) => `${name} ${discVal(k, prefs.disc[k])}`).join(' · ');
+  const ok = () => toast('Réglages copiés : colle-les dans la conversation avec Claude', 3500);
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, () => toast(txt, 10000));
+  else toast(txt, 10000);
+};
+$('#pDisc').onclick = openDisc;
+$('#stDisc').onclick = () => { $('#settings').classList.add('hidden'); openDisc(); };
 
 /* ---------- Divers ---------- */
 let toastTimer;
