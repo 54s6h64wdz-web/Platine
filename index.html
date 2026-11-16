@@ -223,6 +223,11 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 .vpill small{font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400}
 .vpill.on{background:var(--text);color:#111}
 .vpill.on small{color:#555}
+.vstar{flex:none;width:36px;height:36px;border-radius:50%;background:var(--surface2);font-size:18px;line-height:1;color:var(--muted);display:grid;place-items:center}
+.vstar.on{color:var(--accent)}
+.vstar.on.fixed{background:rgba(255,107,53,.16)}
+.vmain{font-style:normal;color:var(--accent);margin-right:5px;font-size:12px}
+.vpill.on .vmain{color:#c2410c}
 .grid.is-list{display:block}
 .calm .card,.calm .row{animation:none!important}
 .grid.is-tiles{grid-template-columns:minmax(0,1fr);gap:10px}
@@ -598,7 +603,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 26, version: '3.4.2', date: '15/11/2026' };
+const BUILD = { n: 27, version: '3.5', date: '16/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -2137,7 +2142,7 @@ function prodInfo(t) {                            // { nom de la prod, nom de la
   let name = '';
   for (const u of all) { const m = (u.title || '').match(/^[^A-Za-z0-9]*([A-Za-z0-9]+)/); if (m && m[1].toLowerCase() === base) { name = m[1]; break; } }
   if (!name) name = base.charAt(0).toUpperCase() + base.slice(1);
-  return { name, base, version: shortVersionName(t, base), count: all.length };
+  return { name, base, version: vLabel(t, base), count: all.length };
 }
 function shortVersionName(u, base) {
   const t = u.title || '', low = t.toLowerCase();
@@ -2157,9 +2162,10 @@ function renderVersions() {
   const all = [t, ...vs].sort((a, b) => natural(a.title, b.title));
   const base = all.map(vKey).reduce((a, b) => (b.length < a.length ? b : a));
   box.classList.remove('hidden');
-  box.innerHTML = `<span class="v-lab">Versions</span>` + all.map(u => {
+  const main = pickMain(all), isMain = main === t;
+  box.innerHTML = `<span class="v-lab">Versions</span><button class="vstar${isMain ? ' on' : ''}${t.star ? ' fixed' : ''}" aria-label="Version principale" title="${isMain ? (t.star ? 'Version principale (touche pour revenir au choix auto)' : 'Version principale (choix auto) — touche pour la fixer') : 'Faire de cette version la version principale'}">${isMain ? '★' : '☆'}</button>` + all.map(u => {
     const ob = ownBpm(u), diff = ob && ob !== bpmOf(t);
-    return `<button class="vpill${u === t ? ' on' : ''}" data-id="${u.id}">${esc(shortVersionName(u, base))}${diff ? ` <small>${ob}</small>` : ''}</button>`;
+    return `<button class="vpill${u === t ? ' on' : ''}" data-id="${u.id}">${u === main ? '<i class="vmain">★</i>' : ''}${esc(vLabel(u, base))}${diff ? ` <small>${ob}</small>` : ''}</button>`;
   }).join('');
   const on = box.querySelector('.vpill.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
@@ -2173,7 +2179,18 @@ async function switchVersion(t) {
   if (was) E.play();
   dbPut(t);
 }
-$('#pVersions').addEventListener('click', e => { const b = e.target.closest('.vpill'); if (!b) return; const t = byId(b.dataset.id); if (t) switchVersion(t); });
+async function starVersion() {
+  const t = current; if (!t) return;
+  const all = [t, ...versionsOf(t)], PI = prodInfo(t);
+  if (t.star) { t.star = false; await dbPut(t); toast('Version principale : choix automatique'); }
+  else {
+    for (const u of all) if (u.star && u !== t) { u.star = false; await dbPut(u); }
+    t.star = true; await dbPut(t);
+    toast(`★ « ${vLabel(t, PI && PI.base)} » est la version principale${PI ? ' de ' + PI.name : ''}`);
+  }
+  prodCache = null; renderVersions(); renderLibrary();
+}
+$('#pVersions').addEventListener('click', e => { if (e.target.closest('.vstar')) return starVersion(); const b = e.target.closest('.vpill'); if (!b) return; const t = byId(b.dataset.id); if (t) switchVersion(t); });
 /* Prépare (décode) les autres versions en arrière-plan pour une bascule instantanée */
 let preTimer;
 function predecodeVersions() {
@@ -2207,15 +2224,20 @@ function prods() {
   prodCache = [...groups.values()].map(list => {
     list.sort((a, b) => natural(a.title, b.title));
     // version principale : celle qui a un BPM dans son nom, au nom le plus court
-    const cnt = new Map(); for (const t of list) { const b = ownBpm(t); if (b) cnt.set(b, (cnt.get(b) || 0) + 1); }
-    let dom = 0, dn = 0; for (const [b, c] of cnt) if (c > dn || (c === dn && Math.abs(b - 120) < Math.abs(dom - 120))) { dom = b; dn = c; }
-    const main = list.slice().sort((a, b) => ((ownBpm(b) === dom && dom ? 1 : 0) - (ownBpm(a) === dom && dom ? 1 : 0)) || (a.title.length - b.title.length))[0];
+    const main = pickMain(list);
     const PI = list.length > 1 ? prodInfo(main) : null;
     const name = PI ? PI.name : cleanName(main.title);
     const date = Math.max(...list.map(t => t.mtime || t.created || 0));
     return { kind: 'prod', key: main.id, name, list, main, date, bpm: bpmOf(main) };
   });
   return prodCache;
+}
+// version principale : celle marquée d'une étoile, sinon celle au BPM dominant et au nom le plus court
+function pickMain(list) {
+  const star = list.find(t => t.star); if (star) return star;
+  const cnt = new Map(); for (const t of list) { const b = ownBpm(t); if (b) cnt.set(b, (cnt.get(b) || 0) + 1); }
+  let dom = 0, dn = 0; for (const [b, c] of cnt) if (c > dn || (c === dn && Math.abs(b - 120) < Math.abs(dom - 120))) { dom = b; dn = c; }
+  return list.slice().sort((a, b) => ((ownBpm(b) === dom && dom ? 1 : 0) - (ownBpm(a) === dom && dom ? 1 : 0)) || (a.title.length - b.title.length))[0];
 }
 let prodSort = 'recent';
 function sortedProds() {
