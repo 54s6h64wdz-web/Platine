@@ -114,7 +114,9 @@ svg{display:block}
 .tr-h[data-h="b"]::before{transform:rotate(-135deg) translate(2px,-1px)}
 .tr-bubble{position:absolute;bottom:calc(100% + 10px);transform:translateX(-50%);background:rgba(60,60,64,.95);color:#fff;font-family:var(--mono);font-size:12px;padding:6px 9px;border-radius:8px;white-space:nowrap;pointer-events:none}
 .tr-bubble.snap{background:var(--accent);color:#1a0b04}
-}
+.times{align-items:center}
+.ab4{font-family:var(--mono);font-size:11px;padding:4px 9px;border-radius:999px;background:var(--surface2);color:var(--muted);letter-spacing:.03em}
+.ab4.on{background:var(--accent-soft);color:var(--accent)}
 .p-meta{text-align:center;margin:6px 0 4px}
 .p-meta h2{font-size:24px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .p-meta p{color:var(--muted);font-size:16px;margin-top:3px;min-height:20px}
@@ -393,6 +395,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
   .pb-edit{height:48px}
   .pb-left button{height:40px}
   .times{margin-top:4px}
+}
 </style>
 </head>
 <body>
@@ -530,7 +533,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
         <div class="tr-bubble hidden" id="trBubble"></div>
       </div>
     </div>
-    <div class="times"><b id="tCur">0:00</b><span id="tDur">0:00</span></div>
+    <div class="times"><b id="tCur">0:00</b><button class="ab4 hidden" id="bAb4" title="Longueur de la boucle en multiples de 4 mesures">×4 mesures</button><span id="tDur">0:00</span></div>
     <p class="wave-hint hidden" id="waveHint"></p>
 
     <div class="transport">
@@ -748,7 +751,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 34, version: '4.0', date: '17/11/2026' };
+const BUILD = { n: 35, version: '4.0.1', date: '17/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -2159,11 +2162,28 @@ E.onstate = () => {
 audio.addEventListener('timeupdate', checkLoop);
 
 /* ---------- Écran du lecteur ---------- */
+/* Le disque prend la place qui reste : tout tient à l'écran, quelles que soient
+   les marges de l'iPhone (encoche, barre d'accueil) et la hauteur du titre. */
+function fitDeck() {
+  const main = document.querySelector('.p-main'), deck = document.querySelector('.deck');
+  if (!main || !main.clientHeight) return;
+  const cs = getComputedStyle(main);
+  let others = 0;
+  for (const el of main.children) {
+    if (el === deck || el.classList.contains('hidden')) continue;
+    const st = getComputedStyle(el); if (st.display === 'none') continue;
+    others += el.offsetHeight + parseFloat(st.marginTop) + parseFloat(st.marginBottom);   // taille réelle (pas celle réduite pendant l'animation)
+  }
+  const avail = main.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - others - 22;
+  const d = Math.max(110, Math.min(avail, main.clientWidth * 0.66, 300));
+  deck.style.setProperty('--d', Math.floor(d) + 'px');
+}
+window.addEventListener('resize', () => playerOpen && fitDeck());
 function openPlayer() {
   if (!current) return;
   playerOpen = true; document.body.classList.add('player-open');
   $('#player').classList.add('open'); $('#player').setAttribute('aria-hidden', 'false');
-  requestAnimationFrame(sizeWave);
+  fitDeck(); requestAnimationFrame(() => { fitDeck(); sizeWave(); renderTrim(); }); setTimeout(() => { if (playerOpen) { fitDeck(); sizeWave(); renderTrim(); } }, 650);
 }
 function closePlayer() {
   if (wideDesk()) return;
@@ -2249,6 +2269,7 @@ function renderPlayer() {
   $('#bLoop').classList.toggle('on', t.loopA != null);
   $('#bLoop').textContent = t.loopA == null ? 'A·B' : 'A↻B';
   renderTrim();
+  if (playerOpen) requestAnimationFrame(fitDeck);
 }
 function renderChips() {
   const t = current, s = t.settings, out = [];
@@ -2387,6 +2408,17 @@ function tapBar(t) {
 /* Boucle A·B façon recadrage de vidéo iOS : un cadre sur la vue d'ensemble,
    deux poignées aimantées sur les barres de mesure, le milieu déplace la boucle. */
 const abOn = () => current && current.loopA != null && current.loopB != null;
+const ab4 = () => prefs.ab4 !== false;
+$('#bAb4').onclick = () => {
+  prefs.ab4 = !ab4(); savePrefs(); renderTrim();
+  const G = barGrid();
+  if (ab4() && G && abOn()) {                      // on arrondit tout de suite la boucle actuelle
+    const dur = E.duration() || current.duration, n = Math.max(1, Math.round((current.loopB - current.loopA) / G.bar / 4));
+    let B = current.loopA + 4 * n * G.bar; if (B > dur + 0.01) B = current.loopA + 4 * Math.max(1, n - 1) * G.bar;
+    setAB(current.loopA, Math.min(B, dur), 'b');
+  }
+  toast(ab4() ? 'Boucle A·B : longueur en multiples de 4 mesures' : 'Boucle A·B : longueur libre (mesure par mesure)');
+};
 function setAB(A, B, listen) {
   const t = current; t.loopA = A; t.loopB = B; E.loopA = A; E.loopB = B;
   if (listen === 'a') E.seek(A); else if (listen === 'b') E.seek(Math.max(A, B - 2.5)); else E.refreshLoop();
@@ -2399,29 +2431,45 @@ $('#bLoop').onclick = () => {
   const dur = E.duration() || t.duration, G = barGrid(), now = E.time();
   let A, B;
   if (G) {                                         // 4 mesures à partir de la mesure en cours
-    A = now < G.start ? G.start : G.start + Math.floor((now - G.start) / G.bar) * G.bar;
+    const step = ab4() ? 4 * G.bar : G.bar;        // ×4 : on part du début de la phrase (mesures 1, 5, 9…)
+    A = now < G.start ? G.start : G.start + Math.floor((now - G.start) / step) * step;
     B = A + 4 * G.bar; while (B > dur + 0.01 && A - G.bar >= -0.001) { A -= G.bar; B -= G.bar; }
     B = Math.min(B, dur); A = Math.max(0, A);
   } else { A = now; B = Math.min(dur, now + 8); if (B - A < 1) { A = Math.max(0, B - 8); } }
   setAB(A, B, 'a');
   toast('Boucle A·B : ajuste les poignées sur la vue d\'ensemble', 2600);
 };
+/* Vue d'ensemble : morceau entier, ou zoom autour de la poignée qu'on tient */
+let ovView = null, ovTarget = null, trimDrag = null;
+function ovRange() { const dur = E.duration() || (current && current.duration) || 1; return ovView ? ovView : [0, dur]; }
+const ovX = (t, W) => { const [a, b] = ovRange(); return (t - a) / (b - a) * W; };
+function ovAnimate(dt) {                            // zoom / dézoom en douceur
+  if (!ovTarget) return false;
+  const dur = E.duration() || current.duration || 1, cur = ovView || [0, dur], k = Math.min(1, dt * 10);
+  const n0 = cur[0] + (ovTarget[0] - cur[0]) * k, n1 = cur[1] + (ovTarget[1] - cur[1]) * k;
+  const done = Math.abs(n0 - ovTarget[0]) < 0.002 * dur && Math.abs(n1 - ovTarget[1]) < 0.002 * dur;
+  ovView = done ? (ovTarget[0] <= 0 && ovTarget[1] >= dur - 1e-6 ? null : ovTarget.slice()) : [n0, n1];
+  if (done) ovTarget = null;
+  renderTrim(); return true;
+}
 function renderTrim() {
   const tr = $('#trim'), on = abOn();
   tr.classList.toggle('hidden', !on);
+  $('#bAb4').classList.toggle('hidden', !on || !barGrid());
+  $('#bAb4').classList.toggle('on', ab4());
   if (!on) return;
-  const W = $('#ov').clientWidth, dur = E.duration() || current.duration || 1;
-  const xa = current.loopA / dur * W, xb = current.loopB / dur * W;
+  const W = $('#ov').clientWidth;
+  const xa = ovX(current.loopA, W), xb = ovX(current.loopB, W);
   $('#trDimL').style.cssText = `left:0;width:${Math.max(0, xa)}px`;
   $('#trDimR').style.cssText = `left:${xb}px;right:0`;
   $('#trFrame').style.cssText = `left:${xa - 16}px;width:${Math.max(0, xb - xa) + 32}px`;
 }
 (() => {
   const tr = $('#trim'); let d = null;
-  const tAt = x => { const r = $('#ov').getBoundingClientRect(); return clamp((x - r.left) / r.width, 0, 1) * (E.duration() || current.duration); };
+  const tAt = x => { const r = $('#ov').getBoundingClientRect(), [a, b] = ovRange(); return clamp(a + clamp((x - r.left) / r.width, 0, 1) * (b - a), 0, E.duration() || current.duration); };
   // aimant : la poignée se colle à la barre de mesure la plus proche (à moins de 14 px), au début et à la fin
   const snap = t => {
-    const G = barGrid(), dur = E.duration() || current.duration, W = $('#ov').clientWidth, px = 14 / W * dur;
+    const G = barGrid(), dur = E.duration() || current.duration, W = $('#ov').clientWidth, [ra, rb] = ovRange(), px = 14 / W * (rb - ra);
     const c = [0, dur]; if (G) { const k = Math.round((t - G.start) / G.bar); c.push(G.start + k * G.bar); }
     let best = t, bd = px; for (const v of c) if (Math.abs(v - t) < bd) { bd = Math.abs(v - t); best = v; }
     return [best, best !== t];
@@ -2431,29 +2479,61 @@ function renderTrim() {
     const len = current.loopB - current.loopA, nb = G ? Math.round(len / G.bar * 4) / 4 : 0;
     b.textContent = `${Math.floor(m / 60)}:${(m % 60).toFixed(2).padStart(5, '0')}` + (G ? ` · ${String(nb).replace('.', ',')} mes.` : '');
     b.classList.remove('hidden'); b.classList.toggle('snap', snapped);
-    const W = $('#ov').clientWidth; b.style.left = clamp(x, 40, W - 40) + 'px';
+    const W = $('#ov').clientWidth, hw = b.offsetWidth / 2 + 2; b.style.left = clamp(x, Math.min(hw, W / 2), Math.max(W - hw, W / 2)) + 'px';
   };
+  const barNo = t => { const G = barGrid(); return G ? Math.round((t - G.start) / G.bar) + 1 : 0; };
+  // applique la position du doigt à la poignée tenue
+  function dragTo(clientX) {
+    const G = barGrid(), dur = E.duration() || current.duration, minL = G ? G.bar : 0.25, t = tAt(clientX), W = $('#ov').clientWidth;
+    let A = current.loopA, B = current.loopB, sn = false, shown;
+    if (G && ab4() && d.kind !== 'move') {
+      if (d.kind === 'b') {                          // fin : par paquets de 4 mesures
+        let n = Math.max(1, Math.round((t - A) / (4 * G.bar)));
+        while (n > 1 && A + 4 * n * G.bar > dur + 0.01) n--;
+        B = Math.min(dur, A + 4 * n * G.bar); shown = B; sn = true;
+      } else {                                       // début : mesure par mesure, la longueur suit
+        const L = d.B - d.A;
+        A = G.start + Math.round((clamp(t, 0, dur - minL) - G.start) / G.bar) * G.bar; A = clamp(A, 0, dur - minL);
+        B = Math.min(dur, A + L); shown = A; sn = true;
+      }
+    } else if (d.kind === 'a') { [A, sn] = snap(clamp(t, 0, B - minL)); A = Math.min(A, B - minL); shown = A; }
+    else if (d.kind === 'b') { [B, sn] = snap(clamp(t, A + minL, dur)); B = Math.max(B, A + minL); shown = B; }
+    else { const L = d.B - d.A; [A, sn] = snap(clamp(d.A + (t - d.t0), 0, dur - L)); A = clamp(A, 0, dur - L); B = A + L; shown = A; }
+    current.loopA = A; current.loopB = B;
+    renderTrim(); bubble(shown, sn, ovX(shown, W));
+    if (G) { const nb = Math.round((B - A) / G.bar); $('#trBubble').textContent = `mes. ${barNo(A)} → ${barNo(B) - 1} · ${nb} mes.`; }
+  }
+  trimDrag = { tick(dt) {                            // bord de la vue zoomée : elle défile toute seule
+    if (!d || d.kind === 'move' || !ovView || ovTarget) return;
+    const r = $('#ov').getBoundingClientRect(), e = 34, x = d.x;
+    const dir = x < r.left + e ? -1 : x > r.right - e ? 1 : 0; if (!dir) return;
+    const dur = E.duration() || current.duration, span = ovView[1] - ovView[0], sh = dir * span * 0.9 * dt;
+    const a = clamp(ovView[0] + sh, 0, dur - span); ovView = [a, a + span]; dragTo(d.x);
+  } };
   tr.addEventListener('pointerdown', e => {
     if (!abOn()) return;
     const h = e.target.closest('.tr-h'), fr = e.target.closest('.tr-frame');
     const kind = h ? h.dataset.h : fr ? 'move' : 'seek';
     if (kind === 'seek') { E.seek(tAt(e.clientX)); updatePosition(); return; }
     e.preventDefault(); tr.setPointerCapture(e.pointerId);
-    d = { kind, id: e.pointerId, t0: tAt(e.clientX), A: current.loopA, B: current.loopB };
+    d = { kind, id: e.pointerId, t0: tAt(e.clientX), A: current.loopA, B: current.loopB, x: e.clientX };
+    if (kind !== 'move') {                          // on attrape une poignée : zoom pour viser la bonne mesure
+      const G = barGrid(), dur = E.duration() || current.duration, r = $('#ov').getBoundingClientRect();
+      const span = Math.min(dur, G ? r.width / 30 * G.bar : 20);
+      if (span < dur * 0.8) {
+        const hT = kind === 'a' ? current.loopA : current.loopB, f = clamp((e.clientX - r.left) / r.width, 0, 1);
+        const a0 = clamp(hT - f * span, 0, dur - span); ovTarget = [a0, a0 + span];
+      }
+    }
   });
   tr.addEventListener('pointermove', e => {
     if (!d || e.pointerId !== d.id) return;
-    const G = barGrid(), dur = E.duration() || current.duration, minL = G ? G.bar : 0.25, t = tAt(e.clientX);
-    let A = current.loopA, B = current.loopB, sn = false, shown;
-    if (d.kind === 'a') { [A, sn] = snap(clamp(t, 0, B - minL)); A = Math.min(A, B - minL); shown = A; }
-    else if (d.kind === 'b') { [B, sn] = snap(clamp(t, A + minL, dur)); B = Math.max(B, A + minL); shown = B; }
-    else { const L = d.B - d.A; [A, sn] = snap(clamp(d.A + (t - d.t0), 0, dur - L)); A = clamp(A, 0, dur - L); B = A + L; shown = A; }
-    current.loopA = A; current.loopB = B;
-    renderTrim(); bubble(shown, sn, shown / dur * $('#ov').clientWidth);
+    d.x = e.clientX; dragTo(e.clientX);
   });
   const up = e => {
     if (!d || e.pointerId !== d.id) return;
     $('#trBubble').classList.add('hidden');
+    if (ovView || ovTarget) { const dur = E.duration() || current.duration; ovTarget = [0, dur]; }   // dézoom
     const k = d.kind; d = null;
     setAB(current.loopA, current.loopB, k === 'b' ? 'b' : 'a');
   };
@@ -2818,22 +2898,29 @@ function drawWave() {
 function drawOverview(ct, span, dur, LI) {
   const w = ov.width, h = ov.height; if (!w) return;
   g3.clearRect(0, 0, w, h);
-  const peaks = current.peaks || [], n = Math.floor(w / (2 * dpr));
+  const [r0, r1] = ovRange(), rs = r1 - r0, X = t => (t - r0) / rs * w;
+  const peaks = current.peaks || [], n = Math.floor(w / (2 * dpr)), F = fine.get(current.id);
   for (let i = 0; i < n; i++) {
-    const a = Math.floor(i / n * peaks.length), b = Math.max(a + 1, Math.floor((i + 1) / n * peaks.length));
-    let m = 0; for (let j = a; j < b; j++) if (peaks[j] > m) m = peaks[j];
+    const ta = r0 + i / n * rs, tb = r0 + (i + 1) / n * rs;
+    const m = ovView ? peakAt(ta, tb, F, peaks, dur) : (() => { const a = Math.floor(i / n * peaks.length), b = Math.max(a + 1, Math.floor((i + 1) / n * peaks.length)); let mm = 0; for (let j = a; j < b; j++) if (peaks[j] > mm) mm = peaks[j]; return mm; })();
     const bh = Math.max(dpr, m * h * 0.8), x = i * 2 * dpr;
-    g3.fillStyle = x / w <= ct / dur ? 'rgba(255,107,53,.75)' : 'rgba(255,255,255,.25)';
+    g3.fillStyle = ta <= ct ? 'rgba(255,107,53,.75)' : 'rgba(255,255,255,.25)';
     g3.fillRect(x, (h - bh) / 2, dpr, bh);
   }
   const G = abOn() ? barGrid() : null;
-  if (G && G.bar / dur * w > 2 * dpr) for (let i = 0, tt = G.start; tt <= dur; i++, tt = G.start + i * G.bar) { g3.fillStyle = i % 4 ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.32)'; g3.fillRect(tt / dur * w, 0, dpr, h); }
-  const a = (ct - span / 2) / dur * w, b = (ct + span / 2) / dur * w;
+  if (G && G.bar / rs * w > 2 * dpr) {
+    const i0 = Math.max(0, Math.floor((r0 - G.start) / G.bar)), pxBar = G.bar / rs * w;
+    for (let i = i0, tt = G.start + i0 * G.bar; tt <= Math.min(dur, r1); i++, tt = G.start + i * G.bar) {
+      g3.fillStyle = i % 4 ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.4)'; g3.fillRect(X(tt), 0, dpr, h);
+      if (ovView && pxBar > 22 * dpr && i % (pxBar > 40 * dpr ? 1 : 4) === 0) { g3.fillStyle = 'rgba(255,255,255,.55)'; g3.font = `${8 * dpr}px ui-monospace,monospace`; g3.fillText(String(i + 1), X(tt) + 2 * dpr, 9 * dpr); }
+    }
+  }
+  const a = X(ct - span / 2), b = X(ct + span / 2);
   if (!G) { g3.fillStyle = 'rgba(255,255,255,.08)'; g3.fillRect(a, 0, b - a, h); }
-  g3.strokeStyle = 'rgba(255,255,255,.35)'; g3.lineWidth = dpr; g3.strokeRect(a + dpr / 2, dpr / 2, b - a - dpr, h - dpr);
+  if (!ovView) { g3.strokeStyle = 'rgba(255,255,255,.35)'; g3.lineWidth = dpr; g3.strokeRect(a + dpr / 2, dpr / 2, b - a - dpr, h - dpr); }
   const L = E.loopRange();
-  if (L) { g3.fillStyle = ACCENT; g3.fillRect(L[0] / dur * w, 0, dpr, h); g3.fillRect(L[1] / dur * w - dpr, 0, dpr, h); }
-  g3.fillStyle = '#fff'; g3.fillRect(ct / dur * w - dpr / 2, 0, dpr * 1.5, h);
+  if (L) { g3.fillStyle = ACCENT; g3.fillRect(X(L[0]), 0, dpr, h); g3.fillRect(X(L[1]) - dpr, 0, dpr, h); }
+  g3.fillStyle = '#fff'; g3.fillRect(X(ct) - dpr / 2, 0, dpr * 1.5, h);
 }
 
 /* Gestes sur la forme d'onde */
@@ -2959,6 +3046,7 @@ function frame(now) {
   if (Math.abs(vel) < 0.05 && !E.scratching) vel = 0;
   if (!discHeld) angle = (angle + vel * dt) % 360;
   if (playerOpen) {
+    if (current) { ovAnimate(dt); if (trimDrag) trimDrag.tick(dt); }
     $('#disc').style.transform = `rotate(${angle}deg)`;
     drawWave();
     $('#tCur').textContent = fmt(seeking ? seekT : E.time());
@@ -3077,6 +3165,7 @@ async function deleteTrack(t, byHand) {
 
 
 /* ---------- Paramètres ---------- */
+const AB4_DEFAULT = true;   // boucle A·B : longueur en multiples de 4 mesures
 const DISC_DEFAULT = { cap: 2, fling: 1, tapeStop: 0.28, torque: 0.45, brake: 0.7, ease: 0.35 };   // réglages de la platine
 const PREF_DEFAULT = { autoNorm: true, loopDefault: true, downDefault: 'start', tabs: { prods: true, folders: true, all: true, playlists: true }, disc: { ...DISC_DEFAULT } };
 let prefs = { ...PREF_DEFAULT };
