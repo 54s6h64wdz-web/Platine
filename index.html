@@ -782,7 +782,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 42, version: '4.5.1', date: '18/11/2026' };
+const BUILD = { n: 43, version: '4.5.2', date: '18/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -2309,19 +2309,33 @@ function drawMiniWave() {
 }
 $('#miniPlay').onclick = togglePlay;
 
-// Glisser vers le bas pour fermer
+// Glisser vers le bas pour fermer : sur tout l'écran de la platine
+// (le geste vertical ferme, le geste horizontal reste à la forme d'onde)
 (() => {
-  let y0 = null, dy = 0;
-  const zone = [$('#pTop'), $('#pMeta'), document.querySelector('.deck')];
-  zone.forEach(z => {
-    z.addEventListener('touchstart', e => { if (scratchOn && e.target.closest('.deck')) { y0 = null; return; } if (e.target.closest('#bScratch,.vstar,.vpill,#pVersions')) { y0 = null; return; } y0 = e.touches[0].clientY; dy = 0; $('#player').style.transition = 'none'; }, { passive: true });
-    z.addEventListener('touchmove', e => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); $('#player').style.transform = `translateY(${dy}px) scale(${1 - Math.min(dy, 400) / 4000})`; $('#player').style.borderRadius = Math.min(34, dy / 4) + 'px'; }, { passive: true });
-    z.addEventListener('touchend', () => {
-      if (y0 == null) return;
-      $('#player').style.transition = ''; $('#player').style.transform = ''; $('#player').style.borderRadius = '';
-      if (dy > 110) closePlayer(); y0 = null;
-    });
-  });
+  const pl = $('#player'); let x0 = 0, y0 = null, dy = 0, on = false;
+  pl.addEventListener('touchstart', e => {
+    y0 = null; on = false;
+    if (wideDesk() || e.touches.length > 1 || $('#pSheet').classList.contains('open')) return;
+    if (e.target.closest('#pSheet,#pVersions,.zoom,input') || (scratchOn && e.target.closest('.deck'))) return;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dy = 0;
+  }, { passive: true });
+  pl.addEventListener('touchmove', e => {
+    if (y0 == null) return;
+    const ddx = e.touches[0].clientX - x0, ddy = e.touches[0].clientY - y0;
+    if (!on) {
+      if (ddy > 12 && ddy > 1.5 * Math.abs(ddx)) { on = true; pl.style.transition = 'none'; }
+      else if (Math.abs(ddx) > 12 || ddy < -12) { y0 = null; return; }
+      else return;
+    }
+    dy = Math.max(0, ddy - 12);
+    pl.style.transform = `translateY(${dy}px) scale(${1 - Math.min(dy, 400) / 4000})`; pl.style.borderRadius = Math.min(34, dy / 4) + 'px';
+  }, { passive: true });
+  const end = () => {
+    if (!on) { y0 = null; return; }
+    pl.style.transition = ''; pl.style.transform = ''; pl.style.borderRadius = '';
+    if (dy > 100) closePlayer(); y0 = null; on = false;
+  };
+  pl.addEventListener('touchend', end); pl.addEventListener('touchcancel', end);
 })();
 
 function renderPlayer() {
@@ -3106,7 +3120,7 @@ function drawOverview(ct, span, dur, LI) {
       if (!viewSpan) viewSpan = spanNow();
       return;
     }
-    if (pts.size === 1) g = { type: 'pending', x0: e.clientX, t0: E.time(), id: e.pointerId };
+    if (pts.size === 1) g = { type: 'pending', x0: e.clientX, y0: e.clientY, t0: E.time(), id: e.pointerId };
   });
   box.addEventListener('pointermove', e => {
     if (!pts.has(e.pointerId)) return;
@@ -3119,6 +3133,7 @@ function drawOverview(ct, span, dur, LI) {
     }
     if (g.id !== e.pointerId) return;
     const dx = e.clientX - g.x0;
+    if (g.type === 'pending' && Math.abs(e.clientY - g.y0) > 12 && Math.abs(e.clientY - g.y0) > Math.abs(dx)) { g.type = 'vert'; return; }   // glisser vers le bas : c'est pour fermer
     if (g.type === 'pending' && Math.abs(dx) > 6) {
       g.type = 'drag';
       g.t0 = E.time();
