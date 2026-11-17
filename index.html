@@ -19,6 +19,7 @@
   --mono:ui-monospace,"SF Mono",Menlo,monospace;
   --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
   --ease:cubic-bezier(.22,1,.36,1);
+  --rev:#3b82f6;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html{height:100%;background:var(--bg);overflow:hidden;overflow:clip}
@@ -96,6 +97,8 @@ svg{display:block}
 .pb-left{display:flex;gap:2px;background:var(--surface);border-radius:999px;padding:5px}
 .pb-left button{height:46px;min-width:54px;border-radius:999px;display:grid;place-items:center;color:var(--muted);font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.04em}
 .pb-left button.on{background:var(--accent);color:#1a0b04}
+.pb-left button.rev.on{background:var(--rev);color:#fff}
+.chip.rev{background:rgba(59,130,246,.18);color:#7fb0ff}
 .pb-edit{display:flex;align-items:center;gap:9px;height:56px;padding:0 22px;border-radius:999px;background:var(--surface);font-size:17px;font-weight:600}
 .ps-dim{position:absolute;inset:0;z-index:6;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .3s}
 .ps-dim.on{opacity:1;pointer-events:auto}
@@ -563,7 +566,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
     <div class="p-bottom">
       <div class="pb-left">
         <button id="bAddPl" aria-label="Ajouter à une playlist"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h12M3 12h12M3 18h8M18 15v6M15 18h6"/></svg></button>
-        <button class="rev" id="bRev" aria-label="Reverse">REV</button>
+        <button class="rev" id="bRev" aria-label="Lecture à l'envers"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M11 6.5v11a.8.8 0 0 1-1.24.67L2.6 13.1a1.3 1.3 0 0 1 0-2.2l7.16-5.07A.8.8 0 0 1 11 6.5zm10 0v11a.8.8 0 0 1-1.24.67L12.6 13.1a1.3 1.3 0 0 1 0-2.2l7.16-5.07A.8.8 0 0 1 21 6.5z"/></svg></button>
       </div>
       <button class="pb-edit" id="bEdit"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Edit</button>
     </div>
@@ -760,7 +763,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 38, version: '4.3.1', date: '17/11/2026' };
+const BUILD = { n: 39, version: '4.3.2', date: '17/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -978,7 +981,8 @@ const E = {
     const s = actx.createBufferSource(), D = this.buf.duration;
     s.buffer = this.rev ? reversed(this.buf) : this.buf; s.playbackRate.value = this.rate;
     const L = this.loopRange();
-    if (L) { s.loop = true; s.loopStart = this.rev ? D - L[1] : L[0]; s.loopEnd = this.rev ? D - L[0] : L[1]; }
+    const outside = L && (this.rev ? at < L[0] - 0.005 : at > L[1] + 0.005);   // placé après la boucle : lecture normale
+    if (L && !outside) { s.loop = true; s.loopStart = this.rev ? D - L[1] : L[0]; s.loopEnd = this.rev ? D - L[0] : L[1]; }
     s.connect(gainNode);
     const tok = ++this.token;
     s.onended = () => { if (tok === this.token && this.playing) { this.playing = false; this.p0 = this.rev ? D : 0; this.src = null; this.onstate(); this.onended(); } };
@@ -1221,7 +1225,7 @@ function analyzeLoop(buf, bpm, fixedDown) {
 function buildLoopBuffer(buf, downbeat, bars, bpm, wrap) {
   const sr = buf.sampleRate, d = Math.round(downbeat * sr), N = Math.round(bars * 240 / bpm * sr);
   const end = Math.min(buf.length, d + N), loopLen = end - d;
-  const out = ctx().createBuffer(buf.numberOfChannels, end, sr);
+  const out = ctx().createBuffer(buf.numberOfChannels, buf.length, sr);   // son entier : on peut naviguer au-delà de la boucle
   const fade = Math.min(Math.round(sr * 0.004), loopLen >> 2);
   // Garde-fou : la queue recollée est fondue. Une vraie queue de reverb (faible) s'éteint sur
   // une mesure ; si ça joue encore fort après la boucle (musique en plus), fondu court.
@@ -1237,7 +1241,7 @@ function buildLoopBuffer(buf, downbeat, bars, bpm, wrap) {
   }
   for (let c = 0; c < buf.numberOfChannels; c++) {
     const src = buf.getChannelData(c), dst = out.getChannelData(c);
-    dst.set(src.subarray(0, end));
+    dst.set(src);
     if (wrap && F > 0) for (let i = end; i < end + F; i++) { const g = 0.5 + 0.5 * Math.cos(Math.PI * (i - end) / F); dst[d + ((i - end) % loopLen)] += src[i] * g; }   // queue recollée, en fondu
     else for (let k = 0; k < fade; k++) dst[end - 1 - k] *= k / fade;                                          // coupe propre
   }
@@ -2319,7 +2323,7 @@ function renderChips() {
   }
   if (s.rate !== 1) out.push(`<span class="chip hot">${s.mode === 'vari' ? 'Varispeed' : 'Tempo'}</span>`);
   if (s.gainManual && s.gainDb !== 0) out.push(`<span class="chip hot">${fmtNum(s.gainDb)} dB</span>`);
-  if (s.reverse && s.mode !== 'tempo') out.push('<span class="chip hot">◀ Reverse</span>');
+  if (s.reverse && s.mode !== 'tempo') out.push('<span class="chip rev">⏪ Reverse</span>');
   if (loopInfo && t.loop && t.loop.on) out.push(`<span class="chip hot">∞ ${loopInfo.bars} mes.</span>`);
   $('#pChips').innerHTML = out.join('');
 }
@@ -2625,10 +2629,11 @@ function renderTrim() {
   tr.addEventListener('pointerup', up); tr.addEventListener('pointercancel', up);
   window.addEventListener('resize', () => current && renderTrim());
 })();
-function checkLoop() {
+let lastLoopT = 0;
+function checkLoop() {                              // mode Tempo : on reboucle seulement quand la lecture franchit la fin
   if (E.kind !== 'element' || !current) return;
-  if (current.loopB != null && E.time() >= current.loopB) E.seek(current.loopA);
-  else if (current.loopB == null && E.loopInf && E.time() >= E.loopInf.end) E.seek(E.loopInf.start);
+  const t = E.time(), R = E.loopRange(), prev = lastLoopT; lastLoopT = t;
+  if (R && prev < R[1] && t >= R[1] && t < R[1] + 0.6) { E.seek(R[0]); lastLoopT = R[0]; }
 }
 
 /* ---------- Versions d'une même prod ----------
@@ -2887,6 +2892,7 @@ $('#tailSeg').addEventListener('click', e => { const b = e.target.closest('butto
 const cv = $('#wave'), g2 = cv.getContext('2d'), ov = $('#ov'), g3 = ov.getContext('2d');
 let dpr = 1, seeking = false, seekT = 0;
 const ACCENT = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6b35';
+const REV_COLOR = '#3b82f6';
 let viewSpan = null, spanTarget = null;          // secondes visibles (null = automatique)
 let dragView = null;                              // temps affiché au centre pendant un glissement
 const fine = new Map();                           // forme d'onde détaillée (100 points / s) par son
@@ -2958,7 +2964,8 @@ function drawWave() {
     const m = peakAt(Math.max(0, t0), Math.min(dur, t1), F, peaks, dur);
     const bh = Math.max(2 * dpr, m * h * 0.94);
     const outLoop = LI && (t1 < LI.start || t0 > LI.end);
-    g2.fillStyle = outLoop ? 'rgba(255,255,255,.09)' : x + bw <= w / 2 ? ACCENT : 'rgba(255,255,255,.28)';
+    const played = E.rev ? x >= w / 2 : x + bw <= w / 2;           // à l'envers : la partie jouée est à droite, en bleu
+    g2.fillStyle = outLoop ? 'rgba(255,255,255,.09)' : played ? (E.rev ? REV_COLOR : ACCENT) : 'rgba(255,255,255,.28)';
     g2.fillRect(x, (h - bh) / 2, bw, bh);
   }
   // mesures
@@ -2977,8 +2984,8 @@ function drawWave() {
   }
   // début / fin du morceau
   g2.fillStyle = 'rgba(255,255,255,.18)'; g2.fillRect(X(0), 0, dpr, h); g2.fillRect(X(dur), 0, dpr, h);
-  // tête de lecture fixe au centre
-  g2.fillStyle = '#fff'; g2.fillRect(w / 2 - dpr, 0, 2 * dpr, h);
+  // tête de lecture fixe au centre (bleue à l'envers)
+  g2.fillStyle = E.rev ? REV_COLOR : '#fff'; g2.fillRect(w / 2 - dpr, 0, 2 * dpr, h);
   if (ov.clientWidth) drawOverview(ct, span, dur, LI);
 }
 function drawOverview(ct, span, dur, LI) {
