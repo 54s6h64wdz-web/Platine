@@ -91,7 +91,30 @@ svg{display:block}
 .pill{padding:10px 18px;border-radius:999px;background:var(--surface2);font-weight:600;font-size:15px}
 .pill.accent{background:var(--accent);color:#1a0b04}
 .pill.ghost{background:transparent;color:var(--muted)}
-.p-scroll{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;touch-action:pan-y;overscroll-behavior-x:none;-webkit-overflow-scrolling:touch;padding:0 20px calc(var(--sab) + 24px)}
+.p-main{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;padding:0 20px calc(var(--sab) + 14px)}
+.p-bottom{display:flex;align-items:center;justify-content:space-between;flex:none}
+.pb-left{display:flex;gap:2px;background:var(--surface);border-radius:999px;padding:5px}
+.pb-left button{height:46px;min-width:54px;border-radius:999px;display:grid;place-items:center;color:var(--muted);font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.04em}
+.pb-left button.on{background:var(--accent);color:#1a0b04}
+.pb-edit{display:flex;align-items:center;gap:9px;height:56px;padding:0 22px;border-radius:999px;background:var(--surface);font-size:17px;font-weight:600}
+.ps-dim{position:absolute;inset:0;z-index:6;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .3s}
+.ps-dim.on{opacity:1;pointer-events:auto}
+.psheet{position:absolute;left:0;right:0;bottom:0;z-index:7;max-height:74%;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:var(--surface);border-radius:26px 26px 0 0;padding:0 18px calc(var(--sab) + 20px);transform:translateY(105%);transition:transform .45s var(--ease);box-shadow:0 -20px 50px rgba(0,0,0,.55)}
+.psheet.open{transform:none}
+.psheet .panel{background:transparent;padding:0}
+.ps-grab{position:sticky;top:0;display:grid;place-items:center;height:26px;background:var(--surface);z-index:1;touch-action:none}
+.ps-grab i{width:40px;height:5px;border-radius:3px;background:#4a4a50}
+.ov-wrap{position:relative;margin-top:10px;flex:none}
+.trim{position:absolute;inset:0;touch-action:none}
+.tr-dim{position:absolute;top:0;bottom:0;background:rgba(0,0,0,.6);pointer-events:none}
+.tr-frame{position:absolute;top:-4px;bottom:-4px;border:3px solid var(--accent);border-left-width:16px;border-right-width:16px;border-radius:8px;box-sizing:border-box}
+.tr-h{position:absolute;top:-3px;bottom:-3px;width:16px;display:grid;place-items:center}
+.tr-h[data-h="a"]{left:-16px}.tr-h[data-h="b"]{right:-16px}
+.tr-h::before{content:"";width:6px;height:12px;border:solid #1a0b04;border-width:0 0 3px 3px;transform:rotate(45deg) translate(2px,-1px);border-radius:1px}
+.tr-h[data-h="b"]::before{transform:rotate(-135deg) translate(2px,-1px)}
+.tr-bubble{position:absolute;bottom:calc(100% + 10px);transform:translateX(-50%);background:rgba(60,60,64,.95);color:#fff;font-family:var(--mono);font-size:12px;padding:6px 9px;border-radius:8px;white-space:nowrap;pointer-events:none}
+.tr-bubble.snap{background:var(--accent);color:#1a0b04}
+}
 .p-meta{text-align:center;margin:6px 0 4px}
 .p-meta h2{font-size:24px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .p-meta p{color:var(--muted);font-size:16px;margin-top:3px;min-height:20px}
@@ -99,7 +122,7 @@ svg{display:block}
 .chip{font-family:var(--mono);font-size:13px;padding:7px 12px;border-radius:10px;background:var(--surface2);color:#d6d6da}
 .chip.hot{background:var(--accent-soft);color:var(--accent)}
 
-.deck{--d:min(66vw,36vh,310px);position:relative;width:var(--d);height:var(--d);margin:22px auto 20px}
+.deck{--d:min(64vw,30vh,300px);position:relative;width:var(--d);height:var(--d);margin:8px auto;flex:none}
 .disc-wrap{position:absolute;inset:0;border-radius:50%;box-shadow:0 24px 60px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04)}
 .disc{position:absolute;inset:0;border-radius:50%;will-change:transform;
   background:repeating-radial-gradient(circle at 50% 50%,#141416 0 1.3px,#1c1c1f 1.3px 2.8px)}
@@ -116,12 +139,12 @@ svg{display:block}
 .wave{position:relative;height:96px;touch-action:none;cursor:grab;-webkit-user-select:none}
 .zoom{position:absolute;right:0;top:-34px;display:flex;gap:6px}
 .zoom button{width:30px;height:26px;border-radius:8px;background:var(--surface2);color:var(--muted);font-family:var(--mono);font-size:16px;line-height:1}
-.ov{display:block;width:100%;height:26px;margin-top:10px;border-radius:6px;background:var(--surface);touch-action:none}
+.ov{display:block;width:100%;height:34px;border-radius:6px;background:var(--surface);touch-action:none}
 .wave canvas{width:100%;height:100%}
 .times{display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;color:var(--muted);margin-top:8px}
 .times b{color:var(--text);font-weight:500}
 
-.transport{display:flex;align-items:center;justify-content:space-between;margin:18px 0 22px}
+.transport{display:flex;align-items:center;justify-content:space-between;margin:8px 0;flex:none}
 .t-btn{width:58px;height:58px;border-radius:18px;display:grid;place-items:center;color:var(--text)}
 .t-btn.small{width:46px;height:46px;color:var(--muted);border-radius:14px}
 .t-btn.small.on{color:var(--accent);background:var(--accent-soft)}
@@ -355,6 +378,21 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 .tab-icons .tab{padding:10px}
 .tab.rev{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.04em;padding:10px 8px;color:var(--muted)}
 .tab.rev.on{background:var(--accent);color:#1a0b04}
+@media (max-height:760px){
+  .deck{--d:min(52vw,22vh,220px);margin:2px auto}
+  .wave{height:60px}
+  .p-meta{margin:2px 0}
+  .transport{margin:4px 0}
+  .ov{height:30px}
+  .t-btn.play{width:64px;height:64px;border-radius:22px}
+  .t-btn{width:50px;height:50px}
+  .p-meta h2{font-size:21px}
+  .p-meta p{font-size:14px}
+  .chips{margin-top:6px}
+  .versions{padding-top:8px}
+  .pb-edit{height:48px}
+  .pb-left button{height:40px}
+  .times{margin-top:4px}
 </style>
 </head>
 <body>
@@ -456,7 +494,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
     </button>
     <div class="p-actions"><button class="round" id="pDisc" aria-label="Réglages de la platine" title="Réglages de la platine"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button><button class="round desk-only" id="pFinder" aria-label="Afficher dans le Finder" title="Afficher dans le Finder"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button><button class="round" id="pShare" aria-label="Partager"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button><button class="pill" id="pEdit">Modifier</button></div>
   </div>
-  <div class="p-scroll">
+  <div class="p-main">
     <div class="p-meta" id="pMeta">
       <h2 id="pTitle"></h2>
       <p id="pArtist"></p>
@@ -484,7 +522,14 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
       <div class="wave" id="waveBox"><canvas id="wave"></canvas></div>
       <div class="zoom"><button id="zOut" aria-label="Dézoomer">−</button><button id="zIn" aria-label="Zoomer">+</button></div>
     </div>
-    <canvas class="ov" id="ov"></canvas>
+    <div class="ov-wrap">
+      <canvas class="ov" id="ov"></canvas>
+      <div class="trim hidden" id="trim">
+        <div class="tr-dim" id="trDimL"></div><div class="tr-dim" id="trDimR"></div>
+        <div class="tr-frame" id="trFrame"><span class="tr-h" data-h="a"></span><span class="tr-h" data-h="b"></span></div>
+        <div class="tr-bubble hidden" id="trBubble"></div>
+      </div>
+    </div>
     <div class="times"><b id="tCur">0:00</b><span id="tDur">0:00</span></div>
     <p class="wave-hint hidden" id="waveHint"></p>
 
@@ -505,17 +550,24 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
       <button class="t-btn small ab" id="bLoop" aria-label="Boucle A-B">A·B</button>
     </div>
 
+    <div class="p-bottom">
+      <div class="pb-left">
+        <button id="bAddPl" aria-label="Ajouter à une playlist"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h12M3 12h12M3 18h8M18 15v6M15 18h6"/></svg></button>
+        <button class="rev" id="bRev" aria-label="Reverse">REV</button>
+      </div>
+      <button class="pb-edit" id="bEdit"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Edit</button>
+    </div>
+  </div>
+
+  <div class="ps-dim" id="psDim"></div>
+  <div class="psheet" id="pSheet">
+    <div class="ps-grab" id="psGrab"><i></i></div>
     <div class="panel">
       <div class="tabs">
         <button class="tab on" data-tab="speed">Vitesse</button>
         <button class="tab" data-tab="gain">Volume</button>
         <button class="tab" data-tab="loop">Loop</button>
-        <div class="tab-icons">
-          <button class="tab rev" id="bRev" aria-label="Reverse">REV</button>
-          <button class="tab" id="bAddPl" aria-label="Ajouter à une playlist">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h12M3 12h12M3 18h8M18 15v6M15 18h6"/></svg>
-          </button>
-        </div>
+        <div class="tab-icons"><button class="pill accent" id="psClose">OK</button></div>
       </div>
 
       <div id="tabSpeed">
@@ -696,7 +748,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 33, version: '3.9', date: '17/11/2026' };
+const BUILD = { n: 34, version: '4.0', date: '17/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -2115,6 +2167,7 @@ function openPlayer() {
 }
 function closePlayer() {
   if (wideDesk()) return;
+  if (typeof closeSheet === 'function') closeSheet();
   if (typeof setScratch === 'function') setScratch(false);
   playerOpen = false; document.body.classList.remove('player-open');
   $('#player').classList.remove('open'); $('#player').setAttribute('aria-hidden', 'true');
@@ -2194,7 +2247,8 @@ function renderPlayer() {
   $('#bRepeat').classList.toggle('on', repeatMode !== 'off');
   $('#rep1').setAttribute('visibility', repeatMode === 'one' ? 'visible' : 'hidden');
   $('#bLoop').classList.toggle('on', t.loopA != null);
-  $('#bLoop').textContent = t.loopA == null ? 'A·B' : t.loopB == null ? 'A→?' : 'A↻B';
+  $('#bLoop').textContent = t.loopA == null ? 'A·B' : 'A↻B';
+  renderTrim();
 }
 function renderChips() {
   const t = current, s = t.settings, out = [];
@@ -2238,6 +2292,18 @@ $('#rRate').addEventListener('input', e => {
 $('#stUp').onclick = () => setRate(Math.pow(2, (Math.round(12 * Math.log2(current.settings.rate)) + 1) / 12));
 $('#stDown').onclick = () => setRate(Math.pow(2, (Math.round(12 * Math.log2(current.settings.rate)) - 1) / 12));
 $('#bRev').onclick = () => $('#revToggle').onclick();
+/* Panneau « Edit » : les réglages du son s'ouvrent par-dessus la platine (plus de défilement) */
+function openSheet() { $('#pSheet').classList.add('open'); $('#psDim').classList.add('on'); }
+function closeSheet() { $('#pSheet').classList.remove('open'); $('#psDim').classList.remove('on'); $('#pSheet').style.transform = ''; }
+$('#bEdit').onclick = openSheet;
+$('#psClose').onclick = closeSheet;
+$('#psDim').onclick = closeSheet;
+(() => {                                             // glisser la poignée vers le bas pour fermer
+  let y0 = null, dy = 0; const g = $('#psGrab'), sh = $('#pSheet');
+  g.addEventListener('touchstart', e => { y0 = e.touches[0].clientY; dy = 0; sh.style.transition = 'none'; }, { passive: true });
+  g.addEventListener('touchmove', e => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); sh.style.transform = `translateY(${dy}px)`; }, { passive: true });
+  g.addEventListener('touchend', () => { if (y0 == null) return; sh.style.transition = ''; sh.style.transform = ''; if (dy > 70) closeSheet(); y0 = null; });
+})();
 $('#revToggle').onclick = () => {
   if (current.settings.mode === 'tempo') return toast('Le Reverse marche en mode Varispeed');
   current.settings.reverse = !current.settings.reverse;
@@ -2318,22 +2384,82 @@ function tapBar(t) {
   }
   renderPlayer();
 }
+/* Boucle A·B façon recadrage de vidéo iOS : un cadre sur la vue d'ensemble,
+   deux poignées aimantées sur les barres de mesure, le milieu déplace la boucle. */
+const abOn = () => current && current.loopA != null && current.loopB != null;
+function setAB(A, B, listen) {
+  const t = current; t.loopA = A; t.loopB = B; E.loopA = A; E.loopB = B;
+  if (listen === 'a') E.seek(A); else if (listen === 'b') E.seek(Math.max(A, B - 2.5)); else E.refreshLoop();
+  if (listen && !E.playing) E.play();
+  saveSoon(); renderPlayer();
+}
 $('#bLoop').onclick = () => {
-  const t = current, now = E.time();
-  if (selMode) { setSel(null); t.loopA = t.loopB = null; E.loopA = E.loopB = null; E.refreshLoop(); renderPlayer(); return; }
-  if (t.loopA == null && barGrid()) {                             // sélection par mesures
-    setSel('A');
-    const G = barGrid(); spanTarget = clampSpan(Math.min((current.duration || 10) * 1.05, G.bar * 16)); if (!viewSpan) viewSpan = spanNow();
-    return;
-  }
-  if (t.loopA == null) { t.loopA = now; toast('Point A posé — appuie encore pour B'); }
-  else if (t.loopB == null) {
-    if (now <= t.loopA + 0.2) { t.loopB = t.loopA; t.loopA = Math.max(0, now); if (t.loopB - t.loopA < 0.2) { t.loopA = t.loopB = null; } }
-    else t.loopB = now;
-    if (t.loopA != null) { E.loopA = t.loopA; E.loopB = t.loopB; E.seek(t.loopA); toast('Boucle A-B active'); }
-  } else { t.loopA = t.loopB = null; E.loopA = E.loopB = null; E.refreshLoop(); toast('Boucle désactivée'); }
-  renderPlayer();
+  const t = current; if (!t) return;
+  if (t.loopA != null) { t.loopA = t.loopB = null; E.loopA = E.loopB = null; E.refreshLoop(); renderPlayer(); saveSoon(); toast('Boucle A·B désactivée'); return; }
+  const dur = E.duration() || t.duration, G = barGrid(), now = E.time();
+  let A, B;
+  if (G) {                                         // 4 mesures à partir de la mesure en cours
+    A = now < G.start ? G.start : G.start + Math.floor((now - G.start) / G.bar) * G.bar;
+    B = A + 4 * G.bar; while (B > dur + 0.01 && A - G.bar >= -0.001) { A -= G.bar; B -= G.bar; }
+    B = Math.min(B, dur); A = Math.max(0, A);
+  } else { A = now; B = Math.min(dur, now + 8); if (B - A < 1) { A = Math.max(0, B - 8); } }
+  setAB(A, B, 'a');
+  toast('Boucle A·B : ajuste les poignées sur la vue d\'ensemble', 2600);
 };
+function renderTrim() {
+  const tr = $('#trim'), on = abOn();
+  tr.classList.toggle('hidden', !on);
+  if (!on) return;
+  const W = $('#ov').clientWidth, dur = E.duration() || current.duration || 1;
+  const xa = current.loopA / dur * W, xb = current.loopB / dur * W;
+  $('#trDimL').style.cssText = `left:0;width:${Math.max(0, xa)}px`;
+  $('#trDimR').style.cssText = `left:${xb}px;right:0`;
+  $('#trFrame').style.cssText = `left:${xa - 16}px;width:${Math.max(0, xb - xa) + 32}px`;
+}
+(() => {
+  const tr = $('#trim'); let d = null;
+  const tAt = x => { const r = $('#ov').getBoundingClientRect(); return clamp((x - r.left) / r.width, 0, 1) * (E.duration() || current.duration); };
+  // aimant : la poignée se colle à la barre de mesure la plus proche (à moins de 14 px), au début et à la fin
+  const snap = t => {
+    const G = barGrid(), dur = E.duration() || current.duration, W = $('#ov').clientWidth, px = 14 / W * dur;
+    const c = [0, dur]; if (G) { const k = Math.round((t - G.start) / G.bar); c.push(G.start + k * G.bar); }
+    let best = t, bd = px; for (const v of c) if (Math.abs(v - t) < bd) { bd = Math.abs(v - t); best = v; }
+    return [best, best !== t];
+  };
+  const bubble = (t, snapped, x) => {
+    const G = barGrid(), b = $('#trBubble'), m = Math.floor(t * 100) / 100;
+    const len = current.loopB - current.loopA, nb = G ? Math.round(len / G.bar * 4) / 4 : 0;
+    b.textContent = `${Math.floor(m / 60)}:${(m % 60).toFixed(2).padStart(5, '0')}` + (G ? ` · ${String(nb).replace('.', ',')} mes.` : '');
+    b.classList.remove('hidden'); b.classList.toggle('snap', snapped);
+    const W = $('#ov').clientWidth; b.style.left = clamp(x, 40, W - 40) + 'px';
+  };
+  tr.addEventListener('pointerdown', e => {
+    if (!abOn()) return;
+    const h = e.target.closest('.tr-h'), fr = e.target.closest('.tr-frame');
+    const kind = h ? h.dataset.h : fr ? 'move' : 'seek';
+    if (kind === 'seek') { E.seek(tAt(e.clientX)); updatePosition(); return; }
+    e.preventDefault(); tr.setPointerCapture(e.pointerId);
+    d = { kind, id: e.pointerId, t0: tAt(e.clientX), A: current.loopA, B: current.loopB };
+  });
+  tr.addEventListener('pointermove', e => {
+    if (!d || e.pointerId !== d.id) return;
+    const G = barGrid(), dur = E.duration() || current.duration, minL = G ? G.bar : 0.25, t = tAt(e.clientX);
+    let A = current.loopA, B = current.loopB, sn = false, shown;
+    if (d.kind === 'a') { [A, sn] = snap(clamp(t, 0, B - minL)); A = Math.min(A, B - minL); shown = A; }
+    else if (d.kind === 'b') { [B, sn] = snap(clamp(t, A + minL, dur)); B = Math.max(B, A + minL); shown = B; }
+    else { const L = d.B - d.A; [A, sn] = snap(clamp(d.A + (t - d.t0), 0, dur - L)); A = clamp(A, 0, dur - L); B = A + L; shown = A; }
+    current.loopA = A; current.loopB = B;
+    renderTrim(); bubble(shown, sn, shown / dur * $('#ov').clientWidth);
+  });
+  const up = e => {
+    if (!d || e.pointerId !== d.id) return;
+    $('#trBubble').classList.add('hidden');
+    const k = d.kind; d = null;
+    setAB(current.loopA, current.loopB, k === 'b' ? 'b' : 'a');
+  };
+  tr.addEventListener('pointerup', up); tr.addEventListener('pointercancel', up);
+  window.addEventListener('resize', () => current && renderTrim());
+})();
 function checkLoop() {
   if (E.kind !== 'element' || !current) return;
   if (current.loopB != null && E.time() >= current.loopB) E.seek(current.loopA);
@@ -2700,8 +2826,10 @@ function drawOverview(ct, span, dur, LI) {
     g3.fillStyle = x / w <= ct / dur ? 'rgba(255,107,53,.75)' : 'rgba(255,255,255,.25)';
     g3.fillRect(x, (h - bh) / 2, dpr, bh);
   }
+  const G = abOn() ? barGrid() : null;
+  if (G && G.bar / dur * w > 2 * dpr) for (let i = 0, tt = G.start; tt <= dur; i++, tt = G.start + i * G.bar) { g3.fillStyle = i % 4 ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.32)'; g3.fillRect(tt / dur * w, 0, dpr, h); }
   const a = (ct - span / 2) / dur * w, b = (ct + span / 2) / dur * w;
-  g3.fillStyle = 'rgba(255,255,255,.08)'; g3.fillRect(a, 0, b - a, h);
+  if (!G) { g3.fillStyle = 'rgba(255,255,255,.08)'; g3.fillRect(a, 0, b - a, h); }
   g3.strokeStyle = 'rgba(255,255,255,.35)'; g3.lineWidth = dpr; g3.strokeRect(a + dpr / 2, dpr / 2, b - a - dpr, h - dpr);
   const L = E.loopRange();
   if (L) { g3.fillStyle = ACCENT; g3.fillRect(L[0] / dur * w, 0, dpr, h); g3.fillRect(L[1] / dur * w - dpr, 0, dpr, h); }
