@@ -633,7 +633,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 30, version: '3.6.1', date: '16/11/2026' };
+const BUILD = { n: 31, version: '3.7', date: '17/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -1086,6 +1086,8 @@ function analyzeLoop(buf, bpm, fixedDown) {
   }
   const ref = e.slice(0, Math.max(1, n - 1)).sort((a, b) => a - b)[Math.floor(Math.max(1, n - 1) / 2)] || 0;
   while (n > 1 && e[n - 1] < 0.35 * ref) n--;              // dernière mesure = juste la queue
+  // par défaut : multiple de 4 mesures (9 → 8 : la mesure en trop est de la queue / de l'audio en plus)
+  n = n >= 4 ? Math.floor(n / 4) * 4 : n >= 2 ? 2 : 1;
   return { downbeat: d / sr, bars: Math.max(1, n), maxBars: Math.max(1, Math.floor((buf.length - d) / barS + 0.02)) };
 }
 function buildLoopBuffer(buf, downbeat, bars, bpm, wrap) {
@@ -1101,40 +1103,107 @@ function buildLoopBuffer(buf, downbeat, bars, bpm, wrap) {
   }
   return { buffer: out, start: d / sr, end: end / sr };
 }
-/* Détection du tempo : on repère les attaques (kicks, snares…) puis on cherche
-   l'écart qui revient le plus souvent entre elles (autocorrélation), en
-   privilégiant les tempos autour de 120 BPM pour éviter les doubles/moitiés. */
-function detectTempo(buf) {
-  const sr = buf.sampleRate, hop = 512, env = envelope(buf, hop), n = env.length, fps = sr / hop;
-  const on = new Float32Array(n);
-  for (let i = 1; i < n; i++) on[i] = Math.max(0, Math.log(1 + 100 * env[i]) - Math.log(1 + 100 * env[i - 1]));
-  const w = Math.max(1, Math.round(fps * 0.2)), pre = new Float64Array(n + 1), o = new Float32Array(n);
-  for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + on[i];
-  for (let i = 0; i < n; i++) { const a = Math.max(0, i - w), b = Math.min(n, i + w + 1); o[i] = Math.max(0, on[i] - (pre[b] - pre[a]) / (b - a)); }
-  const maxL = Math.min(n - 1, Math.ceil(fps * 60 / 55 * 4)), ac = new Float32Array(maxL + 2);
-  for (let L = Math.floor(fps * 60 / 210); L <= maxL; L++) { let s = 0; for (let i = L; i < n; i++) s += o[i] * o[i - L]; ac[L] = s / (n - L); }
-  const at = x => { const i = Math.floor(x); return i + 1 > maxL ? 0 : ac[i] + (ac[i + 1] - ac[i]) * (x - i); };
-  let best = 0, bestS = -1;
-  for (let b = 60; b <= 200; b += 0.1) {
-    const L = fps * 60 / b;
-    const s = (at(L) + 0.5 * at(2 * L) + 0.25 * at(4 * L)) * Math.exp(-0.5 * Math.pow(Math.log2(b / 120) / 0.9, 2));
-    if (s > bestS) { bestS = s; best = b; }
+/* Détection du tempo (v2)
+   1. Flux spectral : on découpe le son en tranches de ~12 ms et on mesure, fréquence
+      par fréquence, ce qui « apparaît » d'une tranche à l'autre. On voit ainsi les
+      attaques de batterie ET les changements de notes/accords (loops sans batterie).
+   2. Autocorrélation : à quel écart le motif se répète-t-il ? On note chaque tempo
+      candidat sur le temps, la demi-mesure, la mesure et 2/4 mesures — une loop se
+      répète à la mesure, ce qui élimine les erreurs de 3/2 (116 au lieu de 174).
+   3. Longueur du fichier : une loop exportée fait souvent un nombre exact de mesures.
+   4. Choix double/moitié : d'après les BPM des autres sons de ta bibliothèque.
+   5. Affinage au centième, puis arrondi au BPM entier le plus proche s'il est très près. */
+function fftMag(re, im) {                       // FFT radix-2 en place, renvoie |X| (moitié)
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const a = i + k, b = a + len / 2, xr = re[b] * cr - im[b] * ci, xi = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      }
+    }
   }
-  if (bestS <= 0) return 0;
-  // Affinage : analyse plus fine (≈3 ms) autour du tempo trouvé, en vérifiant
-  // que les attaques retombent juste sur 1 à 16 temps plus loin.
-  const hop2 = 128, fps2 = sr / hop2, maxN = Math.min(buf.length, Math.round(sr * 60));
-  const env2 = envelope(buf.length > maxN ? { sampleRate: sr, length: maxN, numberOfChannels: buf.numberOfChannels, getChannelData: c => buf.getChannelData(c).subarray(0, maxN) } : buf, hop2);
-  const n2 = env2.length, o2 = new Float32Array(n2);
-  for (let i = 1; i < n2; i++) o2[i] = Math.max(0, Math.log(1 + 100 * env2[i]) - Math.log(1 + 100 * env2[i - 1]));
-  const acAt = x => { const L = Math.floor(x), f = x - L; if (L + 1 >= n2) return 0; let s0 = 0, s1 = 0; for (let i = L + 1; i < n2; i++) { s0 += o2[i] * o2[i - L]; s1 += o2[i] * o2[i - L - 1]; } return (s0 * (1 - f) + s1 * f) / (n2 - L); };
-  let fine = best, fineS = -1;
-  for (let b = best - 1.5; b <= best + 1.5; b += 0.05) {
-    const L = fps2 * 60 / b; let sc = 0;
-    for (let k = 1; k <= 16; k++) sc += acAt(k * L);
-    if (sc > fineS) { fineS = sc; fine = b; }
+  const m = new Float32Array(n / 2);
+  for (let k = 0; k < n / 2; k++) m[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+  return m;
+}
+function onsetStrength(buf, maxSec = 90) {
+  const sr0 = buf.sampleRate, dec = sr0 > 32000 ? 2 : 1, sr = sr0 / dec;
+  const len = Math.min(buf.length, Math.round(maxSec * sr0)), n = Math.floor(len / dec), x = new Float32Array(n);
+  const chs = []; for (let c = 0; c < buf.numberOfChannels; c++) chs.push(buf.getChannelData(c));
+  for (let i = 0; i < n; i++) { let s = 0; for (const d of chs) { s += d[i * dec]; if (dec > 1) s += d[i * dec + 1]; } x[i] = s / (chs.length * dec); }
+  const N = 1024, hop = 256, win = new Float32Array(N);
+  for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
+  const kMax = Math.min(N / 2, Math.round(11000 / sr * N)), frames = Math.max(0, Math.floor((n - N) / hop) + 1);
+  const o = new Float32Array(frames); let prev = null;
+  const re = new Float32Array(N), im = new Float32Array(N);
+  for (let f = 0; f < frames; f++) {
+    const a = f * hop;
+    for (let i = 0; i < N; i++) { re[i] = x[a + i] * win[i]; im[i] = 0; }
+    const m = fftMag(re, im), lm = new Float32Array(kMax);
+    for (let k = 1; k < kMax; k++) lm[k] = Math.log(1 + 1000 * m[k]);
+    if (prev) { let s = 0; for (let k = 1; k < kMax; k++) { const p = Math.max(prev[k], prev[k - 1] || 0, prev[k + 1] || 0); const d = lm[k] - p; if (d > 0) s += d; } o[f] = s; }
+    prev = lm;
   }
-  return Math.abs(fine - Math.round(fine)) < 0.3 ? Math.round(fine) : Math.round(fine * 10) / 10;
+  // moins la moyenne locale (≈0,4 s) → seules les vraies attaques restent
+  const fps = sr / hop, w = Math.max(1, Math.round(fps * 0.2)), pre = new Float64Array(frames + 1), out = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) pre[i + 1] = pre[i] + o[i];
+  for (let i = 0; i < frames; i++) { const a = Math.max(0, i - w), b = Math.min(frames, i + w + 1); out[i] = Math.max(0, o[i] - (pre[b] - pre[a]) / (b - a)); }
+  return { o: out, fps };
+}
+function detectTempo(buf, libBpms) {
+  const { o, fps } = onsetStrength(buf), n = o.length;
+  if (n < fps * 2) return 0;
+  let e0 = 0; for (let i = 0; i < n; i++) e0 += o[i] * o[i]; if (!e0) return 0;
+  // autocorrélation normalisée à un écart fractionnaire (en trames)
+  const ac = L => {
+    if (L >= n - 4) return 0;
+    const i0 = Math.floor(L), f = L - i0; let s = 0;
+    for (let i = i0 + 1; i < n; i++) s += o[i] * (o[i - i0] * (1 - f) + o[i - i0 - 1] * f);
+    return s / e0 * n / (n - L);                // compense le recouvrement plus court
+  };
+  const maxLag = n - 4;
+  const score = b => {
+    const P = fps * 60 / b; let s = 0, w = 0;
+    for (const [k, wt] of [[1, 1], [2, 1], [4, 1.6], [8, 1.2], [16, 0.8]]) { if (k * P < maxLag * 0.75) { s += wt * ac(k * P); w += wt; } }
+    // pénalise les tempos dont la mesure tombe entre deux répétitions (3/2)
+    if (1.5 * 4 * P < maxLag * 0.75) s -= 0.5 * Math.max(0, ac(1.5 * 4 * P) - ac(4 * P));
+    return w ? s / w : 0;
+  };
+  // 1) balayage grossier 50–220 BPM
+  const cand = [];
+  for (let b = 50; b <= 220; b += 0.5) cand.push([b, score(b)]);
+  // 2) bonus longueur du fichier (nombre exact de mesures, 1 à 64)
+  const D = buf.duration;
+  const fit = b => { const bar = 240 / b; let best = 0; for (const nb of [1, 2, 4, 8, 12, 16, 24, 32, 48, 64]) { const err = Math.abs(D - nb * bar); best = Math.max(best, Math.exp(-Math.pow(err / 0.03, 2))); } return best; };
+  // 3) préférence double/moitié d'après la bibliothèque (+ zone 80–160 par défaut)
+  const lib = (libBpms || []).filter(v => v >= 50 && v <= 220);
+  const prior = b => {
+    const base = Math.exp(-0.5 * Math.pow(Math.log2(b / 125) / 0.6, 2));
+    if (lib.length < 5) return base;
+    let s = 0; for (const v of lib) s += Math.exp(-0.5 * Math.pow(Math.log2(b / v) / 0.08, 2));
+    return 0.4 * base + 0.6 * Math.min(1, s / lib.length * 6);
+  };
+  const smax = Math.max(...cand.map(c => c[1])) || 1;
+  // pics locaux du balayage
+  const peaks = [];
+  for (let i = 1; i < cand.length - 1; i++) if (cand[i][1] >= cand[i - 1][1] && cand[i][1] >= cand[i + 1][1] && cand[i][1] > 0.35 * smax) peaks.push(cand[i][0]);
+  if (!peaks.length) return 0;
+  // affinage local de chaque pic (au 1/20 de BPM) puis note finale
+  const refine = b0 => { let bb = b0, bs = -1e9; for (let b = b0 - 0.6; b <= b0 + 0.6; b += 0.05) { const s = score(b) + 0.15 * fit(b) * smax; if (s > bs) { bs = s; bb = b; } } return [bb, bs]; };
+  let pick = null;
+  const evalP = peaks.map(p => { const [b, s] = refine(p); return { b, s, final: Math.pow(Math.max(0, s / smax), 2) * prior(b) * (1 + 0.25 * fit(b)) }; });
+  // les pics « double/moitié » d'un même tempo se départagent surtout par le prior
+  evalP.sort((a, b) => b.final - a.final); pick = evalP[0];
+  let b = pick.b;
+  // 4) arrondi : les BPM entiers sont la norme
+  const r = Math.round(b);
+  if (Math.abs(b - r) < 0.3) b = r; else b = Math.round(b * 10) / 10;
+  return b;
 }
 
 let loopInfo = null;     // infos affichées (mesures, durée…)
@@ -2344,7 +2413,7 @@ $('#bpmDetect').onclick = async () => {
   const t = current; toast('Analyse du tempo…', 0);
   try {
     const buf = await getBuffer(t); if (current !== t) return;
-    const b = detectTempo(buf);
+    const b = detectTempo(buf, tracks.map(ownBpm).filter(Boolean));
     if (!b) return toast('Tempo introuvable : utilise Tap');
     setBpm(b, false); toast(`Tempo détecté : ${b} BPM (÷2 ou ×2 si c'est le double ou la moitié)`, 4000);
   } catch (e) { console.warn(e); toast('Analyse impossible'); }
