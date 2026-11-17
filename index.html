@@ -236,7 +236,23 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radiu
 .vmain{font-style:normal;color:var(--accent);margin-right:5px;font-size:12px}
 .vpill.on .vmain{color:#c2410c}
 .grid.is-list{display:block}
-.calm .card,.calm .row{animation:none!important}
+.calm .card,.calm .row,.calm .frow{animation:none!important}
+.fnav{display:flex;align-items:center;gap:8px;min-height:40px}
+.fnav .round{width:38px;height:38px;flex:none}
+.crumbs{display:flex;align-items:center;gap:2px;overflow-x:auto;white-space:nowrap;scrollbar-width:none;flex:1;min-width:0}
+.crumbs::-webkit-scrollbar{display:none}
+.crumbs button{font-size:14px;color:var(--muted);padding:6px 4px;flex:none}
+.crumbs button.last{color:var(--text);font-weight:600}
+.crumbs i{font-style:normal;color:#55555b;flex:none}
+.ftitle{font-size:24px;font-weight:700;letter-spacing:-.02em;margin-top:6px;line-height:1.2;word-break:break-word}
+.fcount{flex:1;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid #1e1e21;animation:pop .35s var(--ease) both;cursor:pointer}
+.fic{width:46px;height:46px;border-radius:12px;background:rgba(255,107,53,.13);color:var(--accent);display:grid;place-items:center;flex:none}
+.frow .ri{flex:1;min-width:0}
+.frow .ri b{display:block;font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .ri span{display:block;font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .chev{color:#55555b;font-size:22px;line-height:1;padding:0 2px}
+.desktop .frow:hover{background:var(--surface2);border-radius:10px}
 .grid.is-tiles{grid-template-columns:minmax(0,1fr);gap:10px}
 .ptile{display:flex;align-items:center;gap:14px;padding:10px 12px 10px 10px;border-radius:18px;background:var(--surface);border:1px solid transparent}
 .ptile.is-current{border-color:rgba(255,107,53,.45);background:linear-gradient(90deg,rgba(255,107,53,.10),var(--surface) 60%)}
@@ -351,6 +367,11 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
   <div id="allTools" class="hidden">
     <div class="c-tools"><input type="search" class="search" id="allSearch" placeholder="Rechercher un son, un dossier, un BPM…" autocomplete="off"></div>
     <div style="display:flex;gap:8px;align-items:center;margin:8px 0 6px"><div class="seg" id="allSort" style="flex:1;margin:0"><button data-sort="recent" class="on">Récents</button><button data-sort="name">A → Z</button><button data-sort="bpm">BPM</button></div><button class="pill" id="allSelect">Choisir</button></div>
+  </div>
+  <div id="folderTools" class="hidden">
+    <div class="fnav"><button class="round" id="fBack" aria-label="Dossier parent"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><div class="crumbs" id="fCrumbs"></div></div>
+    <h2 class="ftitle" id="fTitle"></h2>
+    <div style="display:flex;gap:8px;align-items:center;margin:6px 0 8px"><span class="fcount" id="fCount"></span><div class="seg" id="fSort" style="margin:0;width:170px"><button data-sort="recent" class="on">Récents</button><button data-sort="name">A → Z</button></div></div>
   </div>
   <div id="prodTools" class="hidden">
     <div class="seg" id="prodSort" style="margin:0 0 18px"><button data-sort="recent" class="on">Récents</button><button data-sort="name">A → Z</button><button data-sort="bpm">BPM</button><button data-sort="versions">Versions</button></div>
@@ -633,7 +654,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 31, version: '3.7', date: '17/11/2026' };
+const BUILD = { n: 32, version: '3.8', date: '17/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -705,7 +726,7 @@ let tracks = [];
 let playlists = [];
 let queue = [], queueSrc = null;   // file de lecture (ids) et sa source {kind,key}
 let view = null;                   // collection ouverte {kind:'project'|'playlist', key}
-let libTab = 'prods', editOrder = false;
+let libTab = localStorage.getItem('platine.tab') || 'prods', editOrder = false;
 const byId = id => tracks.find(t => t.id === id);
 const hashHue = s => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; return (h >>> 0) % 360; };
 const natural = (a, b) => a.localeCompare(b, 'fr', { numeric: true, sensitivity: 'base' });
@@ -1579,6 +1600,7 @@ function collectionTracks(v) {
   if (!v) return [];
   if (v.kind === 'project') return sortProject(tracks.filter(t => t.project === v.key));
   if (v.kind === 'all') return allTracks();
+  if (v.kind === 'folder' || v.kind === 'folderdeep') return folderTracks(v.key, v.kind === 'folderdeep');
   if (v.kind === 'prods') return sortedProds().map(p => p.main);
   const p = playlists.find(x => x.id === v.key);
   if (p && p.smart) return smartTracks(p);
@@ -1589,6 +1611,68 @@ function projectNames() {
   for (const t of tracks) m.set(t.project, Math.max(m.get(t.project) || 0, t.mtime || t.created));
   return [...m.keys()].sort((a, b) => (m.get(b) - m.get(a)) || natural(a, b));   // le plus récent en premier
 }
+/* ---------- Dossiers : navigation dossier par dossier (comme l'app Fichiers) ---------- */
+const IMPORT_DIR = 'Importés à la main';
+const fParts = t => t.src && t.src.includes('/') ? t.src.split('/').slice(0, -1) : [IMPORT_DIR];
+let fPath = []; try { fPath = JSON.parse(localStorage.getItem('platine.fpath') || '[]'); } catch (e) {}
+let fSort = localStorage.getItem('platine.fsort') || 'recent';
+function folderView(path) {
+  const depth = path.length, subs = new Map(), files = [];
+  for (const t of tracks) {
+    const p = fParts(t); if (p.length < depth) continue;
+    let ok = true; for (let i = 0; i < depth; i++) if (p[i] !== path[i]) { ok = false; break; }
+    if (!ok) continue;
+    if (p.length === depth) { files.push(t); continue; }
+    const name = p[depth]; let s = subs.get(name);
+    if (!s) subs.set(name, s = { name, n: 0, date: 0, dirs: new Set() });
+    s.n++; s.date = Math.max(s.date, t.mtime || t.created || 0); if (p.length > depth + 1) s.dirs.add(p[depth + 1]);
+  }
+  const subl = [...subs.values()];
+  if (fSort === 'name') { subl.sort((a, b) => natural(a.name, b.name)); files.sort((a, b) => natural(a.title, b.title)); }
+  else { subl.sort((a, b) => b.date - a.date || natural(a.name, b.name)); files.sort((a, b) => (b.mtime || b.created) - (a.mtime || a.created)); }
+  return { subs: subl, files };
+}
+// chemin réellement affiché : on entre tout seul dans le dossier s'il n'y en a qu'un à la racine
+function folderPath() {
+  let p = fPath.slice();
+  while (p.length) { const v = folderView(p); if (v.subs.length || v.files.length) break; p.pop(); }   // dossier disparu
+  const top = folderView([]);
+  const auto = top.subs.length === 1 && !top.files.length;
+  if (!p.length && auto) p = [top.subs[0].name];
+  return { path: p, minDepth: auto ? 1 : 0 };
+}
+const FOLDER_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h3.6a2 2 0 0 1 1.4.6L12 6h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>';
+function renderFolders_() {
+  const { path, minDepth } = folderPath(), v = folderView(path);
+  const crumbs = path.map((n, i) => `<button data-depth="${i + 1}" class="${i === path.length - 1 ? 'last' : ''}">${esc(n)}</button>`);
+  if (!minDepth) crumbs.unshift('<button data-depth="0" class="' + (path.length ? '' : 'last') + '">Dossiers</button>');
+  $('#fCrumbs').innerHTML = crumbs.join('<i>›</i>');
+  $('#fBack').classList.toggle('hidden', path.length <= minDepth);
+  $('#fTitle').textContent = path.length ? path[path.length - 1] : 'Dossiers';
+  const nAll = v.subs.reduce((a, s) => a + s.n, 0) + v.files.length;
+  $('#fCount').textContent = [v.subs.length ? `${v.subs.length} dossier${v.subs.length > 1 ? 's' : ''}` : '', `${nAll} son${nAll > 1 ? 's' : ''}`].filter(Boolean).join(' · ');
+  const cr = $('#fCrumbs'); cr.scrollLeft = cr.scrollWidth;
+  const html = v.subs.map((s, i) => `<div class="frow" data-dir="${esc(s.name)}" style="animation-delay:${Math.min(i, 12) * 20}ms">
+      <div class="fic">${FOLDER_SVG}</div>
+      <div class="ri"><b>${esc(s.name)}</b><span>${[s.dirs.size ? `${s.dirs.size} dossier${s.dirs.size > 1 ? 's' : ''}` : '', `${s.n} son${s.n > 1 ? 's' : ''}`, s.date ? when(s.date) : ''].filter(Boolean).join(' · ')}</span></div>
+      <button class="ib fplay" aria-label="Tout lire">${PLAY_SVG}</button><span class="chev">›</span></div>`).join('')
+    + v.files.map((t, i) => rowHTML(t, v.subs.length + i, false)).join('');
+  paint($('#grid'), html || '<p class="hint" style="text-align:center;padding:30px 0">Dossier vide</p>', 'folders:' + path.join('/') + ':' + fSort);
+}
+function goFolder(p) {
+  fPath = p; try { localStorage.setItem('platine.fpath', JSON.stringify(p)); } catch (e) {}
+  renderLibrary(); $('#library').scrollTop = 0;
+}
+$('#fCrumbs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; goFolder(folderPath().path.slice(0, +b.dataset.depth)); });
+$('#fBack').onclick = () => goFolder(folderPath().path.slice(0, -1));
+$('#fSort').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; fSort = b.dataset.sort; localStorage.setItem('platine.fsort', fSort); document.querySelectorAll('#fSort button').forEach(x => x.classList.toggle('on', x === b)); renderLibrary(); });
+document.querySelectorAll('#fSort button').forEach(x => x.classList.toggle('on', x.dataset.sort === fSort));
+function folderTracks(key, deep) {
+  const p = key.split('/');
+  if (!deep) return folderView(p).files;
+  return tracks.filter(t => { const q = fParts(t); return q.length >= p.length && p.every((x, i) => q[i] === x); }).sort((a, b) => natural(a.src || a.title, b.src || b.title));
+}
+
 let libItems = [];
 function sameSrc(a, b) { return a && b && a.kind === b.kind && a.key === b.key; }
 const TAB_IDS = ['prods', 'folders', 'all', 'playlists'];
@@ -1604,14 +1688,14 @@ function renderLibrary() {
   const ls = JSON.parse(localStorage.getItem('platine.lastSync') || 'null'), nSrc = Object.keys(loadSources()).length;
   $('#syncInfo').textContent = !ls ? '' : nSrc > 1 ? `${nSrc} dossiers synchronisés · dernière synchro ${ago(ls.at)}` : `Synchro « ${ls.root} » ${ago(ls.at)}`;
   $('#allTools').classList.toggle('hidden', noTracks || libTab !== 'all');
-  $('#grid').classList.toggle('is-list', libTab === 'all');
+  $('#folderTools').classList.toggle('hidden', noTracks || libTab !== 'folders');
+  $('#grid').classList.toggle('is-list', libTab === 'all' || libTab === 'folders');
   $('#grid').classList.toggle('is-tiles', libTab === 'prods');
   if (noTracks) { paint($('#grid'), '', 'empty'); return; }
   if (libTab === 'all') { libItems = []; renderAll_(); return; }
+  if (libTab === 'folders') { libItems = []; renderFolders_(); return; }
   if (libTab === 'prods') {
     libItems = sortedProds();
-  } else if (libTab === 'folders') {
-    libItems = projectNames().map(name => ({ kind: 'project', key: name, name, list: collectionTracks({ kind: 'project', key: name }) }));
   } else {
     libItems = playlists.slice().sort((a, b) => b.created - a.created).map(p => ({ kind: 'playlist', key: p.id, name: p.name, smart: !!p.smart, list: collectionTracks({ kind: 'playlist', key: p.id }) }));
   }
@@ -1648,12 +1732,18 @@ function renderLibrary() {
     `<div class="card" data-new="smart"><div class="cover new" style="font-size:30px">⚡</div><div class="ct"><div><h3>Playlist intelligente</h3><p>Dossiers, BPM…</p></div></div></div>`);
   paint($('#grid'), cards.join(''), libTab + ':' + (libTab === 'prods' ? prodSort : ''));
 }
-$('#libSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; libTab = b.dataset.lib; renderLibrary(); });
+$('#libSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; libTab = b.dataset.lib; try { localStorage.setItem('platine.tab', libTab); } catch (er) {} renderLibrary(); $('#library').scrollTop = 0; });
 $('#grid').addEventListener('click', e => {
+  const fr = e.target.closest('.frow');
+  if (fr) {                                         // dossier : on y entre (ou on lit tout ce qu'il contient)
+    const p = [...folderPath().path, fr.dataset.dir];
+    if (e.target.closest('.fplay')) { const l = folderTracks(p.join('/'), true); if (l.length) playFrom({ kind: 'folderdeep', key: p.join('/') }, l[0]); return; }
+    return goFolder(p);
+  }
   const row = e.target.closest('.row');
-  if (row) {                                        // liste « Tous les sons »
+  if (row) {                                        // liste « Tous les sons » ou sons d'un dossier
     const t = byId(row.dataset.id); if (!t) return;
-    const src = { kind: 'all', key: 'all' };
+    const src = libTab === 'folders' ? { kind: 'folder', key: folderPath().path.join('/') } : { kind: 'all', key: 'all' };
     if (e.target.closest('.radd')) return openPlSheet(t);
     if (e.target.closest('.rplay')) { if (current && current.id === t.id) togglePlay(); else playFrom(src, t); return; }
     if (!current || current.id !== t.id) playFrom(src, t);

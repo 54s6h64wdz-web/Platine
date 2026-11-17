@@ -2,7 +2,7 @@
 // L'app est servie depuis la copie enregistrée sur l'appareil ; à chaque ouverture,
 // index.html compare son build avec version.json (GitHub) et se met à jour si besoin.
 // À chaque mise à jour : même numéro que BUILD dans index.html et que version.json.
-const CACHE = 'platine-build-31';
+const CACHE = 'platine-build-32';
 const ASSETS = ['./', './index.html', './manifest.webmanifest',
   './scratch-worklet.js', './regle.html', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 
