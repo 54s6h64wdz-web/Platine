@@ -99,6 +99,8 @@ svg{display:block}
 .pb-left button.on{background:var(--accent);color:#1a0b04}
 .pb-left button.rev.on{background:var(--rev);color:#fff}
 .chip.rev{background:rgba(59,130,246,.18);color:#7fb0ff}
+#saveSpeed{margin-top:4px}
+#saveSpeed.done{color:var(--accent)}
 .pb-edit{display:flex;align-items:center;gap:9px;height:56px;padding:0 22px;border-radius:999px;background:var(--surface);font-size:17px;font-weight:600}
 .ps-dim{position:absolute;inset:0;z-index:6;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .3s}
 .ps-dim.on{opacity:1;pointer-events:auto}
@@ -598,6 +600,8 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
           <div class="stepper"><button id="stDown">−1 st</button><b id="vSt">0 st</b><button id="stUp">+1 st</button></div>
         </div>
         <div class="ctl row"><span>Reverse</span><button class="switch" id="revToggle" aria-label="Lecture à l'envers"><i></i></button></div>
+        <button class="soft" id="saveSpeed">Enregistrer pour ce son</button>
+        <p class="hint" id="speedSaved"></p>
       </div>
 
       <div id="tabGain" class="hidden">
@@ -763,7 +767,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 39, version: '4.3.2', date: '17/11/2026' };
+const BUILD = { n: 40, version: '4.4', date: '17/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -2165,6 +2169,7 @@ function togglePlay() { if (!current) return; E.playing ? E.pause() : E.play(); 
 function playFrom(src, t) {
   queueSrc = { kind: src.kind, key: src.key };
   queue = collectionTracks(queueSrc).map(x => x.id);
+  if (!current || current.id !== t.id) freshStart(t);
   loadTrack(t, true);
 }
 function getQueue() {
@@ -2173,13 +2178,24 @@ function getQueue() {
   if (!q.includes(current.id)) q = sortProject(tracks.filter(t => t.project === current.project)).map(t => t.id);
   return q;
 }
+/* À chaque lancement d'un son : vitesse 100 % et Reverse coupé,
+   sauf si on a enregistré des réglages pour ce son (Edit → Vitesse). */
+function freshStart(t) {
+  if (!t) return;
+  const sv = t.savedSpeed;
+  t.settings = { ...DEFAULTS, ...(t.settings || {}) };
+  t.settings.rate = sv ? sv.rate : 1;
+  t.settings.reverse = sv ? !!sv.reverse : false;
+  if (sv && sv.mode) t.settings.mode = sv.mode;
+}
 function stepTrack(dir) {
   if (!current) return;
   const q = getQueue(); if (!q.length) return;
   let i = q.indexOf(current.id) + dir;
   if (i >= q.length) i = 0;
   if (i < 0) i = q.length - 1;
-  loadTrack(byId(q[i]), true);
+  const nt = byId(q[i]); freshStart(nt);
+  loadTrack(nt, true);
 }
 function prev() { if (E.time() > 3) E.seek(0); else stepTrack(-1); }
 function next() { stepTrack(1); }
@@ -2292,6 +2308,7 @@ function renderPlayer() {
   $('#stDown').disabled = $('#stUp').disabled = !vari;
   // Volume
   $('#resetSpeed').classList.toggle('on', s.rate !== 1);
+  renderSpeedSave();
   $('#revToggle').classList.toggle('on', !!s.reverse && s.mode !== 'tempo');
   $('#bRev').classList.toggle('on', !!s.reverse && s.mode !== 'tempo');
   $('#resetGain').classList.toggle('on', !!s.gainManual);
@@ -2369,6 +2386,21 @@ $('#revToggle').onclick = () => {
   renderPlayer(); saveSoon();
 };
 $('#resetSpeed').onclick = () => { setRate(1); toast('Vitesse remise à 100 %'); };
+function renderSpeedSave() {
+  const t = current; if (!t) return;
+  const sv = t.savedSpeed, s = t.settings;
+  const same = sv ? sv.rate === s.rate && !!sv.reverse === !!s.reverse && (sv.mode || s.mode) === s.mode : s.rate === 1 && !s.reverse;
+  $('#saveSpeed').textContent = sv && same ? 'Enregistré pour ce son ✓' : 'Enregistrer pour ce son';
+  $('#saveSpeed').classList.toggle('done', !!(sv && same));
+  $('#speedSaved').innerHTML = sv ? `Au lancement : ${Math.round(sv.rate * 1000) / 10} %${sv.reverse ? ' · Reverse' : ''}${sv.mode === 'tempo' ? ' · Tempo' : ''} — <button class="rst" id="forgetSpeed">Oublier</button>` : 'Sans enregistrement, chaque lancement repart à 100 %, sans Reverse.';
+  const f = $('#forgetSpeed'); if (f) f.onclick = () => { delete t.savedSpeed; dbPut(t); renderSpeedSave(); toast('Réglages oubliés : ce son repartira à 100 %'); };
+}
+$('#saveSpeed').onclick = () => {
+  const t = current; if (!t) return; const s = t.settings;
+  if (s.rate === 1 && !s.reverse && s.mode !== 'tempo') { delete t.savedSpeed; toast('Rien à enregistrer : vitesse 100 %, sans Reverse'); }
+  else { t.savedSpeed = { rate: s.rate, reverse: !!s.reverse, mode: s.mode }; toast(`Enregistré : ce son démarrera à ${Math.round(s.rate * 1000) / 10} %${s.reverse ? ' en Reverse' : ''}`); }
+  dbPut(t); renderSpeedSave();
+};
 $('#rRate').addEventListener('dblclick', () => setRate(1));
 $('#modeSeg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
