@@ -115,6 +115,12 @@ svg{display:block}
 .tr-bubble{position:absolute;bottom:calc(100% + 10px);transform:translateX(-50%);background:rgba(60,60,64,.95);color:#fff;font-family:var(--mono);font-size:12px;padding:6px 9px;border-radius:8px;white-space:nowrap;pointer-events:none}
 .tr-bubble.snap{background:var(--accent);color:#1a0b04}
 .times{align-items:center}
+.ov-wrap{display:none}
+.tmid{display:flex;gap:6px;align-items:baseline}
+.tmid i{font-style:normal;opacity:.5}
+.abtn{width:46px;height:34px;border-radius:12px;background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:14px;font-weight:700}
+.abtn:active{background:var(--accent);color:#1a0b04}
+.abtn.set{color:var(--accent);background:var(--accent-soft)}
 .ab4{font-family:var(--mono);font-size:11px;padding:4px 9px;border-radius:999px;background:var(--surface2);color:var(--muted);letter-spacing:.03em}
 .ab4.on{background:var(--accent-soft);color:var(--accent)}
 .p-meta{text-align:center;margin:6px 0 4px}
@@ -532,8 +538,9 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
         <div class="tr-frame" id="trFrame"><span class="tr-h" data-h="a"></span><span class="tr-h" data-h="b"></span></div>
         <div class="tr-bubble hidden" id="trBubble"></div>
       </div>
+      <button class="ab4 hidden" id="bAb4">×4</button>
     </div>
-    <div class="times"><b id="tCur">0:00</b><button class="ab4 hidden" id="bAb4" title="Longueur de la boucle en multiples de 4 mesures">×4 mesures</button><span id="tDur">0:00</span></div>
+    <div class="times"><button class="abtn" id="bA" aria-label="Début de la loop ici">A</button><span class="tmid"><b id="tCur">0:00</b><i>/</i><span id="tDur">0:00</span></span><button class="abtn" id="bB" aria-label="Fin de la loop ici">B</button></div>
     <p class="wave-hint hidden" id="waveHint"></p>
 
     <div class="transport">
@@ -753,7 +760,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 36, version: '4.2', date: '17/11/2026' };
+const BUILD = { n: 37, version: '4.3', date: '17/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -2504,6 +2511,25 @@ function ovAnimate(dt) {                            // zoom / dézoom en douceur
   if (done) ovTarget = null;
   renderTrim(); return true;
 }
+function markAB(which) {
+  const t = current; if (!t) return;
+  const G = barGrid(), dur = fDur(), now = clamp(dragView != null ? dragView : E.time(), 0, dur), R = loopRegion();
+  let A, B;
+  if (G) {
+    const i = Math.max(0, Math.floor((now - G.start) / G.bar + 1e-6)), bs = G.start + i * G.bar, be = Math.min(dur, bs + G.bar);
+    if (which === 'a') { A = bs; B = R && R[1] > A + G.bar / 2 ? R[1] : Math.min(dur, A + 4 * G.bar); }
+    else { B = be; A = R && R[0] < B - G.bar / 2 ? R[0] : Math.max(G.start, B - 4 * G.bar); }
+    const nb = Math.round((B - A) / G.bar), no = Math.round((A - G.start) / G.bar) + 1;
+    toast(which === 'a' ? `A : la loop commence mesure ${no} · ${nb} mes.` : `B : la loop finit mesure ${no + nb - 1} · ${nb} mes.`, 2000);
+  } else {
+    if (which === 'a') { A = now; B = R && R[1] > A + 0.25 ? R[1] : Math.min(dur, A + 8); }
+    else { B = now; A = R && R[0] < B - 0.25 ? R[0] : Math.max(0, B - 8); }
+    toast(which === 'a' ? 'Début de la loop posé' : 'Fin de la loop posée', 1500);
+  }
+  commitRegion(A, B, null);
+}
+$('#bA').onclick = () => markAB('a');
+$('#bB').onclick = () => markAB('b');
 function renderTrim() {
   if (!current) return;
   const tr = $('#trim'), R = loopRegion(), on = !!R;
@@ -2913,14 +2939,15 @@ function drawWave() {
   const ct = dragView != null ? dragView : (seeking ? seekT : E.time());
   const X = t => w / 2 + (t - ct) / span * w;
   const F = fine.get(current.id);
-  // boucles
-  if (current.loopA != null) {
-    const a = X(current.loopA), b = current.loopB != null ? X(current.loopB) : a + 2 * dpr;
-    g2.fillStyle = 'rgba(255,107,53,.14)'; g2.fillRect(a, 0, b - a, h);
-    g2.fillStyle = ACCENT; g2.fillRect(a, 0, 1.5 * dpr, h); if (current.loopB != null) g2.fillRect(b - 1.5 * dpr, 0, 1.5 * dpr, h);
+  // loop : zone légèrement teintée, traits orange épais au début et à la fin
+  const RG = loopRegion(), LI = RG ? { start: RG[0], end: RG[1] } : null;
+  if (LI) {
+    const a = X(LI.start), b = X(LI.end), lw = 3 * dpr;
+    g2.fillStyle = 'rgba(255,107,53,.07)'; g2.fillRect(a, 0, b - a, h);
+    g2.fillStyle = ACCENT; g2.fillRect(a, 0, lw, h); g2.fillRect(b - lw, 0, lw, h);
+    g2.font = `600 ${9 * dpr}px ui-monospace,monospace`;
+    g2.fillText('A', a + lw + 2 * dpr, h - 3 * dpr); g2.fillText('B', b - lw - 8 * dpr, h - 3 * dpr);
   }
-  const LI = current.loopB == null && current.loop && current.loop.on ? loopInfo : null;
-  if (LI) { g2.fillStyle = ACCENT; g2.fillRect(X(LI.start), 0, 1.5 * dpr, h); g2.fillRect(X(LI.end) - 1.5 * dpr, 0, 1.5 * dpr, h); }
   // barres
   const bw = 2 * dpr, gap = 1.4 * dpr, step = bw + gap, n = Math.ceil(w / step) + 1;
   const tPerPx = span / w, phase = ((ct / tPerPx) % step + step) % step;   // les barres glissent avec le son
@@ -2952,7 +2979,7 @@ function drawWave() {
   g2.fillStyle = 'rgba(255,255,255,.18)'; g2.fillRect(X(0), 0, dpr, h); g2.fillRect(X(dur), 0, dpr, h);
   // tête de lecture fixe au centre
   g2.fillStyle = '#fff'; g2.fillRect(w / 2 - dpr, 0, 2 * dpr, h);
-  drawOverview(ct, span, dur, LI);
+  if (ov.clientWidth) drawOverview(ct, span, dur, LI);
 }
 function drawOverview(ct, span, dur, LI) {
   const w = ov.width, h = ov.height; if (!w) return;
@@ -3582,7 +3609,7 @@ async function bpmQueue() {
   let n = 0, last = Date.now();
   try {
     for (;;) {
-      if (document.hidden) { await sleep(2000); continue; }
+      if (document.hidden || E.playing || E.scratching) { await sleep(1500); continue; }   // jamais pendant la lecture (évite les saccades)
       const t = tracks.find(x => x.bpmAuto === undefined && !ownBpm(x) && !inferredBpm(x) && !x.pending && !(x.path && x.cloud));
       if (!t) break;
       try {
@@ -3592,7 +3619,7 @@ async function bpmQueue() {
       await dbPut(t); n++;
       if (current === t) { applyLoop(); renderPlayer(); }
       if (Date.now() - last > 5000) { last = Date.now(); prodCache = null; renderLibrary(); }
-      await sleep(E.playing ? 600 : 150);               // laisse respirer la lecture
+      await sleep(200);
     }
   } finally { bpmBusy = false; if (n) { prodCache = null; renderLibrary(); } }
 }
