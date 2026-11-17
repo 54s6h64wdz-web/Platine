@@ -550,7 +550,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
       <button class="t-btn" id="bNext" aria-label="Suivant">
         <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M13 6.5v11a.8.8 0 0 0 1.24.67l7.16-5.07a1.3 1.3 0 0 0 0-2.2l-7.16-5.07A.8.8 0 0 0 13 6.5zm-10 0v11a.8.8 0 0 0 1.24.67l7.16-5.07a1.3 1.3 0 0 0 0-2.2L4.24 5.83A.8.8 0 0 0 3 6.5z"/></svg>
       </button>
-      <button class="t-btn small ab" id="bLoop" aria-label="Boucle A-B">A·B</button>
+      <button class="t-btn small ab" id="bLoop" aria-label="Loop">LOOP</button>
     </div>
 
     <div class="p-bottom">
@@ -603,7 +603,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
       </div>
 
       <div id="tabLoop" class="hidden">
-        <div class="ctl row"><span>Loop ∞</span><button class="switch" id="loopToggle" aria-label="Activer la loop"><i></i></button></div>
+        <div class="ctl row"><span>Loop</span><button class="switch" id="loopToggle" aria-label="Activer la loop"><i></i></button></div>
         <p class="hint" id="loopHint"></p>
         <button class="soft" id="testJoin" style="margin-bottom:10px">▶ Tester la jonction (3 s avant la fin)</button>
         <div class="ctl"><div class="ctl row" style="padding:0;margin:0"><span>BPM</span>
@@ -707,8 +707,10 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
     <div class="m-head"><span style="width:60px"></span><b>Paramètres</b><button class="pill accent" id="stClose">OK</button></div>
     <div class="ctl row"><span>Normaliser le volume par défaut</span><button class="switch" id="stNorm"><i></i></button></div>
     <p class="hint">Chaque son est monté à −0,3 dB de crête (exports trop faibles). Un réglage manuel du volume reste prioritaire.</p>
-    <div class="ctl row"><span>Loop ∞ si le nom contient un BPM</span><button class="switch" id="stLoop"><i></i></button></div>
-    <p class="hint">Pour les nouveaux sons, et pour les versions dont le BPM est déduit des autres versions.</p>
+    <div class="ctl row"><span>Loop activée par défaut</span><button class="switch" id="stLoop"><i></i></button></div>
+    <p class="hint">Sur tous les sons dont le BPM est connu : dans le nom, d'après les autres versions, ou détecté. Si tu coupes la Loop sur un son, elle reste coupée.</p>
+    <div class="ctl row"><span>Détecter le BPM automatiquement</span><button class="switch" id="stAutoBpm"><i></i></button></div>
+    <p class="hint">Pour les sons sans BPM dans le nom (affiché « ≈ »). Corrige-le avec ÷2, ×2 ou en le tapant dans Edit → Loop.</p>
     <label style="margin-bottom:6px">Downbeat par défaut</label>
     <div class="seg" id="stDown"><button data-d="start">Début du fichier</button><button data-d="auto">Détection auto</button></div>
     <label style="margin:18px 0 6px">Platine</label>
@@ -751,7 +753,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 35, version: '4.0.1', date: '17/11/2026' };
+const BUILD = { n: 36, version: '4.2', date: '17/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -1158,7 +1160,8 @@ function syncEngine() {
    ========================================================= */
 const LOOP_DEFAULT = { on: false, downbeat: 0, manualDown: true, autoChosen: false, bars: null, manualBars: false, wrap: true };   // downbeat au tout début par défaut
 const ownBpm = t => { const b = parseFloat(String(t && t.bpm || '').replace(',', '.')); return b >= 40 && b <= 250 ? b : 0; };
-const bpmOf = t => t ? (ownBpm(t) || inferredBpm(t)) : 0;   // BPM du nom, sinon celui des autres versions
+const bpmOf = t => t ? (ownBpm(t) || inferredBpm(t) || autoBpm(t)) : 0;   // BPM du nom, sinon des autres versions, sinon détecté
+const autoBpm = t => prefs.autoBpm !== false && t.bpmAuto >= 40 && t.bpmAuto <= 250 ? t.bpmAuto : 0;
 
 function envelope(buf, hop = 256) {
   const n = Math.floor(buf.length / hop), env = new Float32Array(n), chs = [];
@@ -1213,10 +1216,22 @@ function buildLoopBuffer(buf, downbeat, bars, bpm, wrap) {
   const end = Math.min(buf.length, d + N), loopLen = end - d;
   const out = ctx().createBuffer(buf.numberOfChannels, end, sr);
   const fade = Math.min(Math.round(sr * 0.004), loopLen >> 2);
+  // Garde-fou : la queue recollée est fondue. Une vraie queue de reverb (faible) s'éteint sur
+  // une mesure ; si ça joue encore fort après la boucle (musique en plus), fondu court.
+  let F = 0;
+  if (wrap && loopLen > 0 && end < buf.length) {
+    const x0 = buf.getChannelData(0), w = Math.min(buf.length - end, Math.round(sr * 0.15));
+    let et = 0; for (let i = end; i < end + w; i++) et += x0[i] * x0[i];
+    let el = 0, nl = 0; for (let i = d; i < end; i += 7) { el += x0[i] * x0[i]; nl++; }
+    const loud = Math.sqrt(et / Math.max(1, w)) / (Math.sqrt(el / Math.max(1, nl)) || 1e-9);
+    const barN = Math.round(sr * 240 / bpm);
+    F = loud > 0.6 ? Math.round(sr * 0.35) : loud > 0.3 ? Math.round(barN * 0.5) : barN;
+    F = Math.min(F, buf.length - end, loopLen);
+  }
   for (let c = 0; c < buf.numberOfChannels; c++) {
     const src = buf.getChannelData(c), dst = out.getChannelData(c);
     dst.set(src.subarray(0, end));
-    if (wrap && loopLen > 0) for (let i = end; i < buf.length; i++) dst[d + ((i - end) % loopLen)] += src[i];   // queue recollée
+    if (wrap && F > 0) for (let i = end; i < end + F; i++) { const g = 0.5 + 0.5 * Math.cos(Math.PI * (i - end) / F); dst[d + ((i - end) % loopLen)] += src[i] * g; }   // queue recollée, en fondu
     else for (let k = 0; k < fade; k++) dst[end - 1 - k] *= k / fade;                                          // coupe propre
   }
   return { buffer: out, start: d / sr, end: end / sr };
@@ -1328,19 +1343,27 @@ let loopInfo = null;     // infos affichées (mesures, durée…)
 async function applyLoop() {
   const t = current; if (!t) return;
   t.loop = { ...LOOP_DEFAULT, ...(t.loop || {}) };
-  if (!t.loop.userSet && !ownBpm(t) && inferredBpm(t) && prefs.loopDefault) t.loop.on = true;   // version : BPM hérité → loop aussi
-  const L = t.loop, bpm = bpmOf(t);
-  if (!L.on || !bpm) { loopInfo = null; E.clearLoopInf(); renderLoopUI(); return; }
+  let bpm = bpmOf(t);
+  if (!bpm && t.bpmAuto === undefined && prefs.autoBpm !== false) {   // son déjà dans la bibliothèque : on détecte son tempo maintenant
+    try { const buf0 = await getBuffer(t); if (current !== t) return; t.bpmAuto = buf0 ? detectTempo(buf0, tracks.map(ownBpm).filter(Boolean)) : 0; dbPut(t); bpm = bpmOf(t); if (bpm) { renderPlayer(); refreshCardIcons(); } } catch (e) { t.bpmAuto = 0; }
+  }
+  if (!t.loop.userSet && prefs.loopDefault && bpm) t.loop.on = true;   // l'app est pensée pour la loop : active dès que le BPM est connu
+  const L = t.loop;
+  if (bpm && t.loopA != null && t.loopB != null) {   // ancienne boucle A·B → devient la région de la loop
+    Object.assign(L, { on: true, userSet: true, downbeat: t.loopA, manualDown: true, bars: Math.max(1, Math.round((t.loopB - t.loopA) / (240 / bpm))), manualBars: true });
+    t.loopA = t.loopB = null; E.loopA = E.loopB = null;
+  }
+  if (!L.on || !bpm) { loopInfo = null; E.clearLoopInf(); renderLoopUI(); renderTrim(); $('#bLoop').classList.toggle('on', abOn()); return; }
   let buf;
   try { buf = await getBuffer(t); } catch (e) { console.warn(e); }
   if (!buf || current !== t) return;
   const a = analyzeLoop(buf, bpm, L.manualDown ? L.downbeat : null);
   L.downbeat = a.downbeat;
   L.bars = L.manualBars && L.bars ? clamp(L.bars, 1, a.maxBars) : a.bars;
-  const lb = buildLoopBuffer(buf, L.downbeat, L.bars, bpm, L.wrap);
+  const lb = buildLoopBuffer(buf, L.downbeat, L.bars, bpm, L.wrap && L.bars >= a.bars);   // queue recollée seulement si la boucle va jusqu'au bout
   loopInfo = { bars: L.bars, maxBars: a.maxBars, len: lb.end - lb.start, start: lb.start, end: lb.end };
   E.setLoopInf(lb);
-  renderLoopUI(); saveSoon();
+  renderLoopUI(); renderTrim(); $('#bLoop').classList.toggle('on', abOn()); saveSoon();
 }
 
 function applyRate() {
@@ -1379,7 +1402,7 @@ const TYPES = { wav:'audio/wav', mp3:'audio/mpeg', m4a:'audio/mp4', aac:'audio/a
 /* Analyse d'un son à l'import (durée, forme d'onde, crête).
    On utilise un contexte audio « hors ligne » à 22 kHz : iOS limite le nombre
    de moteurs audio ouverts en même temps, et ça divise la mémoire par deux. */
-async function analyze(buf) {
+async function analyze(buf, wantTempo) {
   const O = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   let dec;
   try { dec = new O(1, 1, 22050); } catch (e) { dec = ctx(); }
@@ -1399,7 +1422,9 @@ async function analyze(buf) {
     }
     let max = 0; for (const p of peaks) if (p > max) max = p;
     const norm = Array.from(peaks, p => Math.round(p / (max || 1) * 1000) / 1000);
-    return { duration: ab.duration, peaks: norm, peakDb: max > 0 ? 20 * Math.log10(max) : -96 };
+    let bpm = 0;
+    if (wantTempo && prefs.autoBpm !== false) { try { bpm = detectTempo(ab, tracks.map(ownBpm).filter(Boolean)); } catch (e) { console.warn('tempo', e); } }
+    return { duration: ab.duration, peaks: norm, peakDb: max > 0 ? 20 * Math.log10(max) : -96, bpm };
   }
 }
 function guessMeta(name) {
@@ -1417,7 +1442,7 @@ async function importOne(f, { project = IMPORTS, src = null, existing = null } =
   const ext = (f.name.split('.').pop() || '').toLowerCase();
   const type = f.type || TYPES[ext] || 'audio/wav';
   const blob = new Blob([buf], { type });             // copie avant décodage
-  const info = await analyze(buf);
+  const info = await analyze(buf, !guessMeta(f.name).bpm);
   if (existing) {                                     // fichier modifié dans le dossier
     Object.assign(existing, { size: f.size, fileName: f.name, duration: info.duration, peaks: info.peaks, peakDb: info.peakDb });
     await blobPut('audio:' + existing.id, blob); await dbPut(existing);
@@ -1429,7 +1454,7 @@ async function importOne(f, { project = IMPORTS, src = null, existing = null } =
     id, fileName: f.name, title: f.name.replace(/\.[^.]+$/, ''), project, src, size: f.size, mtime: f.lastModified || Date.now(),
     artist: localStorage.getItem('platine.artist') || '',
     bpm: meta.bpm, key: meta.key, notes: '', created: Date.now(), loop: { ...LOOP_DEFAULT, on: prefs.loopDefault && !!meta.bpm, ...(prefs.downDefault === 'auto' ? { manualDown: false, autoChosen: true } : {}) },
-    duration: info.duration, peaks: info.peaks, peakDb: info.peakDb,
+    duration: info.duration, peaks: info.peaks, peakDb: info.peakDb, bpmAuto: meta.bpm ? undefined : info.bpm,
     hue: Math.floor(Math.random() * 360), hasCover: false, settings: { ...DEFAULTS }
   };
   await blobPut('audio:' + id, blob); await dbPut(t);
@@ -1551,7 +1576,7 @@ async function syncFolder(fileList, opts = {}) {
   localStorage.setItem('platine.lastSync', JSON.stringify({ at: Date.now(), root: srcRoot }));
   { const S0 = loadSources(); S0[srcRoot] = { ...(S0[srcRoot] || {}), at: Date.now(), ...(opts.path && !prefix ? { path: opts.path } : {}) }; saveSources(S0); if (D && opts.path && !prefix) DESK.watch(opts.path); }
   syncing = false; $('#btnSync').classList.remove('spin');
-  renderAll();
+  renderAll(); setTimeout(bpmQueue, 1500);
   const msg = [];
   if (added) msg.push(`${added} ajouté${added > 1 ? 's' : ''}`);
   if (updated) msg.push(`${updated} mis à jour`);
@@ -1877,7 +1902,8 @@ const MORE_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentC
 // Ligne épurée : numéro (ou égaliseur si en lecture), titre, date · infos, menu « … »
 function rowHTML(t, i, showProject, btns) {
   const cur = current && current.id === t.id, date = t.mtime || t.created;
-  const sub = [date ? when(date) : '', showProject && t.project !== IMPORTS ? t.project : '', t.bpm ? t.bpm + ' BPM' : '', t.key, fmt(t.duration)].filter(Boolean).join(' · ');
+  const bl = ownBpm(t) ? t.bpm + ' BPM' : bpmOf(t) ? '≈' + bpmOf(t) + ' BPM' : '';
+  const sub = [date ? when(date) : '', showProject && t.project !== IMPORTS ? t.project : '', bl, t.key, fmt(t.duration)].filter(Boolean).join(' · ');
   return `<div class="row${cur ? ' cur' : ''}${selIds.has(t.id) ? ' picked' : ''}" data-id="${t.id}" data-i="${i}" style="animation-delay:${Math.min(i, 12) * 20}ms">
     <span class="rn"><i>${i + 1}</i><em class="eq"><b></b><b></b><b></b></em></span>
     <div class="ri"><b>${esc(t.title)}</b><span>${esc(sub)}</span></div>
@@ -2093,7 +2119,7 @@ async function loadTrack(t, autoplay, startAt = 0) {
     if (!b) return toast('Fichier introuvable');
     if (current !== t) return;                     // un autre son a été choisi entre-temps
     url = URL.createObjectURL(b); audioURLs.set(t.id, url);
-    if (t.pending) b.arrayBuffer().then(analyze).then(info => { Object.assign(t, { duration: info.duration, peaks: info.peaks, peakDb: info.peakDb, pending: false }); dbPut(t); if (current === t) { renderPlayer(); applyGain(autoGain(t)); } }).catch(() => {});
+    if (t.pending) b.arrayBuffer().then(ab => analyze(ab, !ownBpm(t))).then(info => { Object.assign(t, { duration: info.duration, peaks: info.peaks, peakDb: info.peakDb, pending: false }); if (!ownBpm(t)) t.bpmAuto = info.bpm; dbPut(t); if (current === t) { renderPlayer(); applyGain(autoGain(t)); } }).catch(() => {});
     if (DESK) for (const [id, u] of [...audioURLs]) { if (audioURLs.size <= 12) break; if (id !== t.id) { URL.revokeObjectURL(u); audioURLs.delete(id); } }   // mémoire limitée sur Mac
   }
   E.reset(); loopInfo = null; viewSpan = spanTarget = null; if (typeof setSel === 'function') setSel(null);
@@ -2266,8 +2292,7 @@ function renderPlayer() {
   // Répétition / boucle
   $('#bRepeat').classList.toggle('on', repeatMode !== 'off');
   $('#rep1').setAttribute('visibility', repeatMode === 'one' ? 'visible' : 'hidden');
-  $('#bLoop').classList.toggle('on', t.loopA != null);
-  $('#bLoop').textContent = t.loopA == null ? 'A·B' : 'A↻B';
+  $('#bLoop').classList.toggle('on', abOn());
   renderTrim();
   if (playerOpen) requestAnimationFrame(fitDeck);
 }
@@ -2370,8 +2395,8 @@ $('#bRepeat').onclick = () => {
 /* Grille des mesures (si le BPM est connu) */
 function barGrid() {
   const bpm = bpmOf(current); if (!bpm) return null;
-  const L = { ...LOOP_DEFAULT, ...(current.loop || {}) };
-  return { start: L.downbeat || 0, bar: 240 / bpm };
+  const L = { ...LOOP_DEFAULT, ...(current.loop || {}) }, bar = 240 / bpm, st = L.downbeat || 0;
+  return { start: st - Math.floor(st / bar + 1e-3) * bar, bar };
 }
 let selMode = null;     // sélection de boucle par mesures : 'A' puis 'B'
 function setSel(m) {
@@ -2381,7 +2406,7 @@ function setSel(m) {
   $('#waveHint').textContent = m === 'A' ? 'Touche la 1re mesure de la boucle (A)' : m === 'B' ? 'Touche la dernière mesure de la boucle (B)' : '';
 }
 function pickBar(t) {
-  const g = barGrid(), dur = E.duration() || current.duration;
+  const g = barGrid(), dur = fDur();
   const idx = Math.max(0, Math.floor((t - g.start) / g.bar));
   const a = t < g.start ? 0 : g.start + idx * g.bar;
   return { a, b: Math.min(dur, t < g.start ? g.start : g.start + (idx + 1) * g.bar) };
@@ -2407,17 +2432,37 @@ function tapBar(t) {
 }
 /* Boucle A·B façon recadrage de vidéo iOS : un cadre sur la vue d'ensemble,
    deux poignées aimantées sur les barres de mesure, le milieu déplace la boucle. */
-const abOn = () => current && current.loopA != null && current.loopB != null;
+/* Loop unique : une région [début, fin] montrée par le cadre sur la vue d'ensemble.
+   Avec BPM : en mesures (Loop ∞, queue recollée si la région va jusqu'au bout).
+   Sans BPM : boucle libre. */
+let dragRegion = null;
+function loopRegion() {
+  const t = current; if (!t) return null;
+  if (dragRegion) return dragRegion;
+  if (bpmOf(t)) { const L = t.loop || {}; return L.on && loopInfo ? [loopInfo.start, loopInfo.end] : null; }
+  return t.loopA != null && t.loopB != null ? [t.loopA, t.loopB] : null;
+}
+const abOn = () => !!loopRegion();
+async function commitRegion(A, B, listen) {
+  const t = current, bpm = bpmOf(t);
+  if (!bpm) return setAB(A, B, listen);
+  const bar = 240 / bpm, L = t.loop = { ...LOOP_DEFAULT, ...(t.loop || {}) };
+  Object.assign(L, { on: true, userSet: true, downbeat: A, manualDown: true, bars: Math.max(1, Math.round((B - A) / bar)), manualBars: true });
+  await applyLoop(); if (current !== t) return;
+  if (listen === 'b') E.seek(Math.max(A, B - 2.5)); else if (listen === 'a') E.seek(A);
+  if (listen && !E.playing) E.play();
+  renderPlayer(); saveSoon();
+}
 const ab4 = () => prefs.ab4 !== false;
 $('#bAb4').onclick = () => {
   prefs.ab4 = !ab4(); savePrefs(); renderTrim();
   const G = barGrid();
   if (ab4() && G && abOn()) {                      // on arrondit tout de suite la boucle actuelle
-    const dur = E.duration() || current.duration, n = Math.max(1, Math.round((current.loopB - current.loopA) / G.bar / 4));
-    let B = current.loopA + 4 * n * G.bar; if (B > dur + 0.01) B = current.loopA + 4 * Math.max(1, n - 1) * G.bar;
-    setAB(current.loopA, Math.min(B, dur), 'b');
+    const [A0, B0] = loopRegion(), dur = fDur(), n = Math.max(1, Math.round((B0 - A0) / G.bar / 4));
+    let B = A0 + 4 * n * G.bar; if (B > dur + 0.01) B = A0 + 4 * Math.max(1, n - 1) * G.bar;
+    commitRegion(A0, Math.min(B, dur), 'b');
   }
-  toast(ab4() ? 'Boucle A·B : longueur en multiples de 4 mesures' : 'Boucle A·B : longueur libre (mesure par mesure)');
+  toast(ab4() ? 'Loop : longueur en multiples de 4 mesures' : 'Loop : longueur libre (mesure par mesure)');
 };
 function setAB(A, B, listen) {
   const t = current; t.loopA = A; t.loopB = B; E.loopA = A; E.loopB = B;
@@ -2425,27 +2470,34 @@ function setAB(A, B, listen) {
   if (listen && !E.playing) E.play();
   saveSoon(); renderPlayer();
 }
-$('#bLoop').onclick = () => {
+$('#bLoop').onclick = async () => {
   const t = current; if (!t) return;
-  if (t.loopA != null) { t.loopA = t.loopB = null; E.loopA = E.loopB = null; E.refreshLoop(); renderPlayer(); saveSoon(); toast('Boucle A·B désactivée'); return; }
-  const dur = E.duration() || t.duration, G = barGrid(), now = E.time();
-  let A, B;
-  if (G) {                                         // 4 mesures à partir de la mesure en cours
-    const step = ab4() ? 4 * G.bar : G.bar;        // ×4 : on part du début de la phrase (mesures 1, 5, 9…)
-    A = now < G.start ? G.start : G.start + Math.floor((now - G.start) / step) * step;
-    B = A + 4 * G.bar; while (B > dur + 0.01 && A - G.bar >= -0.001) { A -= G.bar; B -= G.bar; }
-    B = Math.min(B, dur); A = Math.max(0, A);
-  } else { A = now; B = Math.min(dur, now + 8); if (B - A < 1) { A = Math.max(0, B - 8); } }
-  setAB(A, B, 'a');
-  toast('Boucle A·B : ajuste les poignées sur la vue d\'ensemble', 2600);
+  const bpm = bpmOf(t);
+  if (bpm) {
+    const L = t.loop = { ...LOOP_DEFAULT, ...(t.loop || {}) };
+    if (L.on) { L.on = false; L.userSet = true; await applyLoop(); renderPlayer(); saveSoon(); toast('Loop coupée'); return; }
+    L.on = true; L.userSet = true;
+    const bar = 240 / bpm, dur = E.duration() || t.duration, now = E.time();
+    if (dur / bar > 34 && !L.manualBars) {          // morceau long : 4 mesures à partir de la phrase en cours
+      const G = barGrid(), ph = 4 * bar, A = now < G.start ? G.start : G.start + Math.floor((now - G.start) / ph) * ph;
+      Object.assign(L, { downbeat: A, manualDown: true, bars: 4, manualBars: true });
+    }
+    await applyLoop(); renderPlayer(); saveSoon();
+    toast('Loop : tire les poignées ‹ › pour choisir les mesures', 2600); return;
+  }
+  if (t.loopA != null) { t.loopA = t.loopB = null; E.loopA = E.loopB = null; E.refreshLoop(); renderPlayer(); saveSoon(); toast('Loop coupée'); return; }
+  setAB(0, E.duration() || t.duration, null);
+  toast('Loop sur tout le son. Indique le BPM (Edit → Loop) pour boucler en mesures', 3500);
 };
 /* Vue d'ensemble : morceau entier, ou zoom autour de la poignée qu'on tient */
+// vraie durée du fichier (le moteur peut raccourcir le son à la fin d'une boucle)
+const fDur = () => (current && current.duration) || E.duration() || 1;
 let ovView = null, ovTarget = null, trimDrag = null;
-function ovRange() { const dur = E.duration() || (current && current.duration) || 1; return ovView ? ovView : [0, dur]; }
+function ovRange() { const dur = fDur() || 1; return ovView ? ovView : [0, dur]; }
 const ovX = (t, W) => { const [a, b] = ovRange(); return (t - a) / (b - a) * W; };
 function ovAnimate(dt) {                            // zoom / dézoom en douceur
   if (!ovTarget) return false;
-  const dur = E.duration() || current.duration || 1, cur = ovView || [0, dur], k = Math.min(1, dt * 10);
+  const dur = fDur() || 1, cur = ovView || [0, dur], k = Math.min(1, dt * 10);
   const n0 = cur[0] + (ovTarget[0] - cur[0]) * k, n1 = cur[1] + (ovTarget[1] - cur[1]) * k;
   const done = Math.abs(n0 - ovTarget[0]) < 0.002 * dur && Math.abs(n1 - ovTarget[1]) < 0.002 * dur;
   ovView = done ? (ovTarget[0] <= 0 && ovTarget[1] >= dur - 1e-6 ? null : ovTarget.slice()) : [n0, n1];
@@ -2453,30 +2505,31 @@ function ovAnimate(dt) {                            // zoom / dézoom en douceur
   renderTrim(); return true;
 }
 function renderTrim() {
-  const tr = $('#trim'), on = abOn();
+  if (!current) return;
+  const tr = $('#trim'), R = loopRegion(), on = !!R;
   tr.classList.toggle('hidden', !on);
   $('#bAb4').classList.toggle('hidden', !on || !barGrid());
   $('#bAb4').classList.toggle('on', ab4());
   if (!on) return;
   const W = $('#ov').clientWidth;
-  const xa = ovX(current.loopA, W), xb = ovX(current.loopB, W);
+  const xa = ovX(R[0], W), xb = ovX(R[1], W);
   $('#trDimL').style.cssText = `left:0;width:${Math.max(0, xa)}px`;
   $('#trDimR').style.cssText = `left:${xb}px;right:0`;
   $('#trFrame').style.cssText = `left:${xa - 16}px;width:${Math.max(0, xb - xa) + 32}px`;
 }
 (() => {
   const tr = $('#trim'); let d = null;
-  const tAt = x => { const r = $('#ov').getBoundingClientRect(), [a, b] = ovRange(); return clamp(a + clamp((x - r.left) / r.width, 0, 1) * (b - a), 0, E.duration() || current.duration); };
+  const tAt = x => { const r = $('#ov').getBoundingClientRect(), [a, b] = ovRange(); return clamp(a + clamp((x - r.left) / r.width, 0, 1) * (b - a), 0, fDur()); };
   // aimant : la poignée se colle à la barre de mesure la plus proche (à moins de 14 px), au début et à la fin
   const snap = t => {
-    const G = barGrid(), dur = E.duration() || current.duration, W = $('#ov').clientWidth, [ra, rb] = ovRange(), px = 14 / W * (rb - ra);
+    const G = barGrid(), dur = fDur(), W = $('#ov').clientWidth, [ra, rb] = ovRange(), px = 14 / W * (rb - ra);
     const c = [0, dur]; if (G) { const k = Math.round((t - G.start) / G.bar); c.push(G.start + k * G.bar); }
     let best = t, bd = px; for (const v of c) if (Math.abs(v - t) < bd) { bd = Math.abs(v - t); best = v; }
     return [best, best !== t];
   };
   const bubble = (t, snapped, x) => {
     const G = barGrid(), b = $('#trBubble'), m = Math.floor(t * 100) / 100;
-    const len = current.loopB - current.loopA, nb = G ? Math.round(len / G.bar * 4) / 4 : 0;
+    const R = loopRegion() || [0, 0], len = R[1] - R[0], nb = G ? Math.round(len / G.bar * 4) / 4 : 0;
     b.textContent = `${Math.floor(m / 60)}:${(m % 60).toFixed(2).padStart(5, '0')}` + (G ? ` · ${String(nb).replace('.', ',')} mes.` : '');
     b.classList.remove('hidden'); b.classList.toggle('snap', snapped);
     const W = $('#ov').clientWidth, hw = b.offsetWidth / 2 + 2; b.style.left = clamp(x, Math.min(hw, W / 2), Math.max(W - hw, W / 2)) + 'px';
@@ -2484,9 +2537,13 @@ function renderTrim() {
   const barNo = t => { const G = barGrid(); return G ? Math.round((t - G.start) / G.bar) + 1 : 0; };
   // applique la position du doigt à la poignée tenue
   function dragTo(clientX) {
-    const G = barGrid(), dur = E.duration() || current.duration, minL = G ? G.bar : 0.25, t = tAt(clientX), W = $('#ov').clientWidth;
-    let A = current.loopA, B = current.loopB, sn = false, shown;
-    if (G && ab4() && d.kind !== 'move') {
+    const G = barGrid(), dur = fDur(), minL = G ? G.bar : 0.25, t = tAt(clientX), W = $('#ov').clientWidth;
+    let [A, B] = dragRegion, sn = false, shown;
+    if (G && d.kind !== 'move' && !ab4()) {           // avec BPM : toujours des mesures entières
+      if (d.kind === 'a') { A = G.start + Math.round((clamp(t, 0, B - minL) - G.start) / G.bar) * G.bar; A = clamp(A, 0, B - minL); shown = A; }
+      else { B = A + Math.max(1, Math.round((clamp(t, A + minL, dur) - A) / G.bar)) * G.bar; if (B > dur + 0.01) B -= G.bar; B = Math.min(B, dur); shown = B; }
+      sn = true;
+    } else if (G && ab4() && d.kind !== 'move') {
       if (d.kind === 'b') {                          // fin : par paquets de 4 mesures
         let n = Math.max(1, Math.round((t - A) / (4 * G.bar)));
         while (n > 1 && A + 4 * n * G.bar > dur + 0.01) n--;
@@ -2498,8 +2555,8 @@ function renderTrim() {
       }
     } else if (d.kind === 'a') { [A, sn] = snap(clamp(t, 0, B - minL)); A = Math.min(A, B - minL); shown = A; }
     else if (d.kind === 'b') { [B, sn] = snap(clamp(t, A + minL, dur)); B = Math.max(B, A + minL); shown = B; }
-    else { const L = d.B - d.A; [A, sn] = snap(clamp(d.A + (t - d.t0), 0, dur - L)); A = clamp(A, 0, dur - L); B = A + L; shown = A; }
-    current.loopA = A; current.loopB = B;
+    else { const L = d.B - d.A; if (G) { const maxA = G.start + Math.floor((dur - L - G.start) / G.bar + 1e-3) * G.bar; A = G.start + Math.round((clamp(d.A + (t - d.t0), 0, dur - L) - G.start) / G.bar) * G.bar; A = clamp(A, 0, Math.max(0, maxA)); sn = true; } else { [A, sn] = snap(clamp(d.A + (t - d.t0), 0, dur - L)); A = clamp(A, 0, dur - L); } B = A + L; shown = A; }
+    dragRegion = [A, B];
     renderTrim(); bubble(shown, sn, ovX(shown, W));
     if (G) { const nb = Math.round((B - A) / G.bar); $('#trBubble').textContent = `mes. ${barNo(A)} → ${barNo(B) - 1} · ${nb} mes.`; }
   }
@@ -2507,7 +2564,7 @@ function renderTrim() {
     if (!d || d.kind === 'move' || !ovView || ovTarget) return;
     const r = $('#ov').getBoundingClientRect(), e = 34, x = d.x;
     const dir = x < r.left + e ? -1 : x > r.right - e ? 1 : 0; if (!dir) return;
-    const dur = E.duration() || current.duration, span = ovView[1] - ovView[0], sh = dir * span * 0.9 * dt;
+    const dur = fDur(), span = ovView[1] - ovView[0], sh = dir * span * 0.9 * dt;
     const a = clamp(ovView[0] + sh, 0, dur - span); ovView = [a, a + span]; dragTo(d.x);
   } };
   tr.addEventListener('pointerdown', e => {
@@ -2516,12 +2573,13 @@ function renderTrim() {
     const kind = h ? h.dataset.h : fr ? 'move' : 'seek';
     if (kind === 'seek') { E.seek(tAt(e.clientX)); updatePosition(); return; }
     e.preventDefault(); tr.setPointerCapture(e.pointerId);
-    d = { kind, id: e.pointerId, t0: tAt(e.clientX), A: current.loopA, B: current.loopB, x: e.clientX };
+    const R0 = loopRegion(); dragRegion = R0.slice();
+    d = { kind, id: e.pointerId, t0: tAt(e.clientX), A: R0[0], B: R0[1], x: e.clientX };
     if (kind !== 'move') {                          // on attrape une poignée : zoom pour viser la bonne mesure
-      const G = barGrid(), dur = E.duration() || current.duration, r = $('#ov').getBoundingClientRect();
+      const G = barGrid(), dur = fDur(), r = $('#ov').getBoundingClientRect();
       const span = Math.min(dur, G ? r.width / 30 * G.bar : 20);
       if (span < dur * 0.8) {
-        const hT = kind === 'a' ? current.loopA : current.loopB, f = clamp((e.clientX - r.left) / r.width, 0, 1);
+        const hT = kind === 'a' ? R0[0] : R0[1], f = clamp((e.clientX - r.left) / r.width, 0, 1);
         const a0 = clamp(hT - f * span, 0, dur - span); ovTarget = [a0, a0 + span];
       }
     }
@@ -2533,9 +2591,10 @@ function renderTrim() {
   const up = e => {
     if (!d || e.pointerId !== d.id) return;
     $('#trBubble').classList.add('hidden');
-    if (ovView || ovTarget) { const dur = E.duration() || current.duration; ovTarget = [0, dur]; }   // dézoom
+    if (ovView || ovTarget) { const dur = fDur(); ovTarget = [0, dur]; }   // dézoom
     const k = d.kind; d = null;
-    setAB(current.loopA, current.loopB, k === 'b' ? 'b' : 'a');
+    const [A, B] = dragRegion; dragRegion = null;
+    commitRegion(A, B, k === 'b' ? 'b' : 'a');
   };
   tr.addEventListener('pointerup', up); tr.addEventListener('pointercancel', up);
   window.addEventListener('resize', () => current && renderTrim());
@@ -3177,6 +3236,7 @@ function autoGain(t) { const s = t.settings; if (!s.gainManual) s.gainDb = prefs
 function renderSettings() {
   $('#stNorm').classList.toggle('on', prefs.autoNorm);
   $('#stLoop').classList.toggle('on', prefs.loopDefault);
+  $('#stAutoBpm').classList.toggle('on', prefs.autoBpm !== false);
   document.querySelectorAll('#stDown button').forEach(b => b.classList.toggle('on', b.dataset.d === prefs.downDefault));
   renderSyncLog();
   $('#stVersion').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · ${BUILD.date}`;
@@ -3207,6 +3267,7 @@ $('#stTabs').addEventListener('click', e => {
   prefs.tabs[k] = !on; savePrefs(); renderSettings(); renderLibrary();
 });
 $('#stLoop').onclick = () => { prefs.loopDefault = !prefs.loopDefault; savePrefs(); renderSettings(); };
+$('#stAutoBpm').onclick = () => { prefs.autoBpm = prefs.autoBpm === false; savePrefs(); renderSettings(); resetVersionCache(); renderAll(); if (current) { applyLoop(); renderPlayer(); } if (prefs.autoBpm !== false) bpmQueue(); };
 $('#stDown').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; prefs.downDefault = b.dataset.d; savePrefs(); renderSettings(); });
 $('#stUpdate').onclick = () => forceUpdate();
 
@@ -3418,7 +3479,7 @@ async function analyzeQueue() {
   try {
     for (;;) {
       const t = tracks.find(x => x.pending && !x.cloud && x.path); if (!t) break;
-      try { const info = await analyze(await DESK.readFile(t.path)); Object.assign(t, { duration: info.duration, peaks: info.peaks, peakDb: info.peakDb }); }
+      try { const info = await analyze(await DESK.readFile(t.path), !ownBpm(t)); Object.assign(t, { duration: info.duration, peaks: info.peaks, peakDb: info.peakDb }); if (!ownBpm(t)) t.bpmAuto = info.bpm; }
       catch (e) { console.warn('analyse', t.path, e); t.unreadable = true; }
       t.pending = false; await dbPut(t); n++;
       if (current === t) { renderPlayer(); applyGain(autoGain(t)); }
@@ -3514,6 +3575,28 @@ $('#dsCopy').onclick = () => {
 $('#pDisc').onclick = openDisc;
 $('#stDisc').onclick = () => { $('#settings').classList.add('hidden'); openDisc(); };
 
+/* ---------- Détection du BPM en fond (sons déjà dans la bibliothèque) ---------- */
+let bpmBusy = false;
+async function bpmQueue() {
+  if (bpmBusy || prefs.autoBpm === false) return; bpmBusy = true;
+  let n = 0, last = Date.now();
+  try {
+    for (;;) {
+      if (document.hidden) { await sleep(2000); continue; }
+      const t = tracks.find(x => x.bpmAuto === undefined && !ownBpm(x) && !inferredBpm(x) && !x.pending && !(x.path && x.cloud));
+      if (!t) break;
+      try {
+        const b = await audioBlob(t);
+        if (b) { const info = await analyze(await b.arrayBuffer(), true); t.bpmAuto = info.bpm || 0; } else t.bpmAuto = 0;
+      } catch (e) { t.bpmAuto = 0; }
+      await dbPut(t); n++;
+      if (current === t) { applyLoop(); renderPlayer(); }
+      if (Date.now() - last > 5000) { last = Date.now(); prodCache = null; renderLibrary(); }
+      await sleep(E.playing ? 600 : 150);               // laisse respirer la lecture
+    }
+  } finally { bpmBusy = false; if (n) { prodCache = null; renderLibrary(); } }
+}
+
 /* ---------- Divers ---------- */
 let toastTimer;
 function toast(msg, ms = 2200) {
@@ -3553,6 +3636,7 @@ $('#buildInfo').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · 
     playlists = await plAll();
     renderLibrary();
     // Prépare les sons en arrière-plan pour un démarrage instantané
+    setTimeout(bpmQueue, 4000);
     if (DESK) deskStart();
     else for (const t of tracks) { if (!audioURLs.has(t.id)) { const b = await blobGet('audio:' + t.id); if (b) audioURLs.set(t.id, URL.createObjectURL(b)); } }
   } catch (e) {
