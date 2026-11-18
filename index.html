@@ -80,7 +80,7 @@ svg{display:block}
 .mini-txt span{font-size:13px;color:var(--muted)}
 .mini .round{width:42px;height:42px;background:transparent;flex:none}
 .mini-txt span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.scratch-btn{position:absolute;left:-6px;bottom:-4px;z-index:3;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:7px 11px;border-radius:999px;background:var(--surface2);color:var(--muted)}
+.scratch-btn{display:none!important;position:absolute;left:-6px;bottom:-4px;z-index:3;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:7px 11px;border-radius:999px;background:var(--surface2);color:var(--muted)}
 .scratch-btn.on{background:var(--accent);color:#1a0b04}
 .deck.scratch-on .disc-wrap{box-shadow:0 0 0 2px rgba(255,107,53,.55);border-radius:50%}
 .mini-bar{position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(255,255,255,.08)}
@@ -130,6 +130,9 @@ svg{display:block}
 .abtn{width:46px;height:34px;border-radius:12px;background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:14px;font-weight:700}
 .abtn:active{background:var(--accent);color:#1a0b04}
 .abtn.set{color:var(--accent);background:var(--accent-soft)}
+.tleft{display:flex;gap:6px}
+.abtn.db{width:auto;padding:0 10px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.abtn.db.on{background:var(--accent);color:#1a0b04;min-width:64px;font-size:13px}
 .ab4{font-family:var(--mono);font-size:11px;padding:4px 9px;border-radius:999px;background:var(--surface2);color:var(--muted);letter-spacing:.03em}
 .ab4.on{background:var(--accent-soft);color:var(--accent)}
 .p-meta{text-align:center;margin:6px 0 4px}
@@ -560,7 +563,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
       </div>
       <button class="ab4 hidden" id="bAb4">×4</button>
     </div>
-    <div class="times"><button class="abtn" id="bA" aria-label="Début de la loop ici">A</button><span class="tmid"><b id="tCur">0:00</b><i>/</i><span id="tDur">0:00</span></span><button class="abtn" id="bB" aria-label="Fin de la loop ici">B</button></div>
+    <div class="times"><span class="tleft"><button class="abtn" id="bA" aria-label="Début de la loop ici">A</button><button class="abtn db" id="bDown" aria-label="Choisir le downbeat">Downbeat</button></span><span class="tmid"><b id="tCur">0:00</b><i>/</i><span id="tDur">0:00</span></span><button class="abtn" id="bB" aria-label="Fin de la loop ici">B</button></div>
     <p class="wave-hint hidden" id="waveHint"></p>
 
     <div class="transport">
@@ -782,7 +785,7 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 <script>
 'use strict';
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 43, version: '4.5.2', date: '18/11/2026' };
+const BUILD = { n: 44, version: '4.6', date: '18/11/2026' };
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -886,7 +889,7 @@ async function audioBlob(t) {
   }
   return blobGet('audio:' + t.id);
 }
-let current = null;
+let current = null, dbMode = null;   // dbMode : choix du downbeat en cours
 const audioURLs = new Map();   // id -> blob: URL du son
 const coverURLs = new Map();   // id -> blob: URL de la pochette
 let currentFile = null;        // fichier prêt pour le bouton Partager
@@ -2281,8 +2284,8 @@ function openPlayer() {
 }
 function closePlayer() {
   if (wideDesk()) return;
+  if (typeof dbMode !== 'undefined' && dbMode) setDbMode(false);
   if (typeof closeSheet === 'function') closeSheet();
-  if (typeof setScratch === 'function') setScratch(false);
   playerOpen = false; document.body.classList.remove('player-open');
   $('#player').classList.remove('open'); $('#player').setAttribute('aria-hidden', 'true');
   $('#player').style.transform = '';
@@ -2316,7 +2319,7 @@ $('#miniPlay').onclick = togglePlay;
   pl.addEventListener('touchstart', e => {
     y0 = null; on = false;
     if (wideDesk() || e.touches.length > 1 || $('#pSheet').classList.contains('open')) return;
-    if (e.target.closest('#pSheet,#pVersions,.zoom,input') || (scratchOn && e.target.closest('.deck'))) return;
+    if (e.target.closest('#pSheet,#pVersions,.zoom,input,.disc-wrap')) return;   // sur le disque : scratch
     x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dy = 0;
   }, { passive: true });
   pl.addEventListener('touchmove', e => {
@@ -2493,7 +2496,7 @@ $('#bRepeat').onclick = () => {
 /* Grille des mesures (si le BPM est connu) */
 function barGrid() {
   const bpm = bpmOf(current); if (!bpm) return null;
-  const L = { ...LOOP_DEFAULT, ...(current.loop || {}) }, bar = 240 / bpm, st = L.downbeat || 0;
+  const L = { ...LOOP_DEFAULT, ...(current.loop || {}) }, bar = 240 / bpm, st = dbMode ? dbMode.cand : (L.downbeat || 0);
   return { start: st - Math.floor(st / bar + 1e-3) * bar, bar };
 }
 let selMode = null;     // sélection de boucle par mesures : 'A' puis 'B'
@@ -2602,6 +2605,33 @@ function ovAnimate(dt) {                            // zoom / dézoom en douceur
   if (done) ovTarget = null;
   renderTrim(); return true;
 }
+/* Downbeat : on place le trait central sur le 1er temps ; au lâcher, le son joue
+   depuis ce point (la forme d'onde reste figée, une ligne d'aperçu avance). OK valide. */
+function previewDown(t) {
+  dbMode.cand = clamp(t, 0, fDur());
+  E.seek(dbMode.cand); if (!E.playing) E.play();
+  updatePosition();
+}
+function setDbMode(on) {
+  const b = $('#bDown');
+  if (on) {
+    if (!barGrid()) { toast('Il faut un BPM pour le downbeat (Edit → Loop)'); return; }
+    dbMode = { cand: E.time() };
+    b.classList.add('on'); b.textContent = 'OK';
+    toast('Place le trait sur le 1er temps, relâche pour écouter, puis OK', 3500);
+  } else {
+    dbMode = null; b.classList.remove('on'); b.textContent = 'Downbeat';
+  }
+}
+$('#bDown').onclick = async () => {
+  if (!dbMode) return setDbMode(true);
+  const t = current, d = dbMode.cand; setDbMode(false);
+  const L = t.loop = { ...LOOP_DEFAULT, ...(t.loop || {}) };
+  Object.assign(L, { downbeat: d, manualDown: true, on: true, userSet: true });
+  await applyLoop(); E.seek(d); if (!E.playing) E.play();
+  renderPlayer(); saveSoon();
+  toast(`Downbeat posé à ${d.toFixed(3).replace('.', ',')} s : la loop démarre ici`, 2500);
+};
 function markAB(which) {
   const t = current; if (!t) return;
   const G = barGrid(), dur = fDur(), now = clamp(dragView != null ? dragView : E.time(), 0, dur), R = loopRegion();
@@ -3029,7 +3059,7 @@ function drawWave() {
   g2.clearRect(0, 0, w, h);
   if (!current || !w) return;
   const peaks = current.peaks || [], dur = current.duration || E.duration() || 1, span = spanNow();
-  const ct = dragView != null ? dragView : (seeking ? seekT : E.time());
+  const ct = dragView != null ? dragView : dbMode ? dbMode.cand : (seeking ? seekT : E.time());
   const X = t => w / 2 + (t - ct) / span * w;
   const F = fine.get(current.id);
   // loop : zone légèrement teintée, traits orange épais au début et à la fin
@@ -3073,6 +3103,10 @@ function drawWave() {
   g2.fillStyle = 'rgba(255,255,255,.18)'; g2.fillRect(X(0), 0, dpr, h); g2.fillRect(X(dur), 0, dpr, h);
   // tête de lecture fixe au centre (bleue à l'envers)
   g2.fillStyle = E.rev ? REV_COLOR : '#fff'; g2.fillRect(w / 2 - dpr, 0, 2 * dpr, h);
+  if (dbMode && dragView == null) {                 // mode Downbeat : la lecture avance sur une ligne d'aperçu
+    const xp = X(E.time()); g2.fillStyle = 'rgba(255,255,255,.45)'; g2.fillRect(xp - dpr, 0, 2 * dpr, h);
+    g2.fillStyle = ACCENT; g2.font = `600 ${9 * dpr}px ui-monospace,monospace`; g2.fillText('1', w / 2 + 3 * dpr, 10 * dpr);
+  }
   if (ov.clientWidth) drawOverview(ct, span, dur, LI);
 }
 function drawOverview(ct, span, dur, LI) {
@@ -3108,7 +3142,7 @@ function drawOverview(ct, span, dur, LI) {
   const box = $('#waveBox'), pts = new Map();
   let g = null;   // geste en cours
   const W = () => box.getBoundingClientRect().width;
-  const timeAtX = x => { const r = box.getBoundingClientRect(); return (dragView != null ? dragView : E.time()) + (x - r.left - r.width / 2) / r.width * spanNow(); };
+  const timeAtX = x => { const r = box.getBoundingClientRect(); return (dragView != null ? dragView : dbMode ? dbMode.cand : E.time()) + (x - r.left - r.width / 2) / r.width * spanNow(); };
   box.addEventListener('pointerdown', e => {
     if (!current) return;
     box.setPointerCapture(e.pointerId);
@@ -3136,7 +3170,7 @@ function drawOverview(ct, span, dur, LI) {
     if (g.type === 'pending' && Math.abs(e.clientY - g.y0) > 12 && Math.abs(e.clientY - g.y0) > Math.abs(dx)) { g.type = 'vert'; return; }   // glisser vers le bas : c'est pour fermer
     if (g.type === 'pending' && Math.abs(dx) > 6) {
       g.type = 'drag';
-      g.t0 = E.time();
+      g.t0 = dbMode ? dbMode.cand : E.time();         // mode Downbeat : on part du trait central figé
       if (g.type === 'scratch') S.begin(g.t0);
     }
     if (g.type === 'scratch' || g.type === 'drag') {
@@ -3147,7 +3181,7 @@ function drawOverview(ct, span, dur, LI) {
   });
   function endScratch(gg) {
     if (gg.type === 'scratch') S.release();
-    else if (gg.type === 'drag' && dragView != null) E.seek(dragView);
+    else if (gg.type === 'drag' && dragView != null) { if (dbMode) previewDown(dragView); else E.seek(dragView); }
     dragView = null;
   }
   const up = e => {
@@ -3158,7 +3192,7 @@ function drawOverview(ct, span, dur, LI) {
     if (g.id !== e.pointerId) return;
     if (g.type === 'pending') {                             // simple toucher
       const t = clamp(timeAtX(e.clientX), 0, current.duration || E.duration());
-      if (selMode) tapBar(t); else { E.seek(t); updatePosition(); }
+      if (dbMode) previewDown(t); else if (selMode) tapBar(t); else { E.seek(t); updatePosition(); }
     } else endScratch(g);
     g = null;
   };
@@ -3176,7 +3210,7 @@ function drawOverview(ct, span, dur, LI) {
 /* ---------- Easter egg : jouer avec le disque ----------
    Doigt posé = tape stop. Faire tourner le disque = le son suit (×2 max,
    en avant ou en arrière). Lâcher = le plateau repart avec son inertie. */
-let discHeld = false, scratchOn = false;
+let discHeld = false, scratchOn = true;   // le disque répond toujours au doigt
 function setScratch(on) {
   scratchOn = on; $('#bScratch').classList.toggle('on', on); $('#bScratch').setAttribute('aria-pressed', on);
   document.querySelector('.deck').classList.toggle('scratch-on', on);
