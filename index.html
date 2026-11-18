@@ -752,6 +752,9 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
     <label style="margin:18px 0 6px">Bibliothèque</label>
     <p class="hint" id="stLib" style="margin-top:0"></p>
     <p class="hint" id="stStore"></p>
+    <label style="margin:18px 0 6px">Journal technique</label>
+    <p class="hint" id="dlogInfo" style="margin-top:0"></p>
+    <div class="quick" style="margin-top:6px"><button id="dlogCopy" class="accent">Copier le journal</button><button id="dlogClear">Effacer</button></div>
     <label style="margin:18px 0 6px">Journal de synchro</label>
     <div id="stLog" class="log"></div>
     <label style="margin:18px 0 6px">Application</label>
@@ -784,8 +787,30 @@ body.wide:not(.player-open) #library,body.wide:not(.player-open) #collection{rig
 
 <script>
 'use strict';
+/* ---------- Journal technique : erreurs, sons lancés, démarrages (à copier dans les Paramètres) ---------- */
+const DLOG = 'platine.dlog';
+function dlog(type, msg) {
+  try {
+    const L = JSON.parse(localStorage.getItem(DLOG) || '[]');
+    L.push([Date.now(), type, String(msg).slice(0, 500)]); while (L.length > 300) L.shift();
+    localStorage.setItem(DLOG, JSON.stringify(L));
+  } catch (e) {}
+}
+window.addEventListener('error', e => dlog('ERREUR', `${e.message} @ ${(e.filename || '').split('/').pop()}:${e.lineno}:${e.colno}`));
+window.addEventListener('unhandledrejection', e => { const r = e.reason; dlog('ERREUR', 'promesse : ' + ((r && (r.stack || r.message)) || r)); });
+['error', 'warn'].forEach(k => { const o = console[k].bind(console); console[k] = (...a) => { o(...a); dlog(k === 'error' ? 'erreur' : 'alerte', a.map(x => x && x.stack ? x.stack.split('\n').slice(0, 2).join(' ') : x && x.message ? x.message : typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ')); }; });
+(() => {                                           // l'app a-t-elle été coupée brutalement la dernière fois ?
+  try {
+    const alive = localStorage.getItem('platine.alive'), vis = localStorage.getItem('platine.vis'), last = localStorage.getItem('platine.lastplay');
+    if (alive) dlog(vis === 'hidden' ? 'info' : 'PLANTAGE', vis === 'hidden' ? 'Session précédente fermée par iOS en arrière-plan (normal)' : 'La session précédente s\'est arrêtée brutalement avec l\'app à l\'écran (iOS a sans doute manqué de mémoire)' + (last ? ' — dernier son : ' + last : ''));
+    localStorage.setItem('platine.alive', '1'); localStorage.setItem('platine.vis', 'visible');
+  } catch (e) {}
+  window.addEventListener('pagehide', () => { try { localStorage.removeItem('platine.alive'); } catch (e) {} });
+  document.addEventListener('visibilitychange', () => { try { localStorage.setItem('platine.vis', document.visibilityState); } catch (e) {} });
+})();
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 44, version: '4.6', date: '18/11/2026' };
+const BUILD = { n: 45, version: '4.6.1', date: '18/11/2026' };
+dlog('info', `Démarrage build ${BUILD.n} · ${navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 120)} · écran ${screen.width}×${screen.height}`);
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
    Tout est stocké sur le téléphone (IndexedDB), rien en ligne.
@@ -923,6 +948,7 @@ function ctx() {
   limiter.threshold.value = -1; limiter.knee.value = 0; limiter.ratio.value = 20;
   limiter.attack.value = 0.002; limiter.release.value = 0.12;
   route(false);
+  actx.onstatechange = () => dlog('audio', 'moteur audio : ' + actx.state);
   try { actx.createMediaElementSource(audio).connect(gainNode); } catch (e) { console.warn(e); }
   setTimeout(() => S.init(), 0);
   return actx;
@@ -957,7 +983,8 @@ async function decodeTrack(t) {
   const buf = await new Promise((res, rej) => { const p = ctx().decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); });
   decoded.set(t.id, buf);
   const bytes = () => { let n = 0; for (const b of decoded.values()) n += b.length * b.numberOfChannels * 4; return n; };
-  while (decoded.size > 2 && bytes() > 320e6) decoded.delete(decoded.keys().next().value);   // ~320 Mo max
+  const cap = /iPhone|iPad|iPod/.test(navigator.userAgent) || navigator.maxTouchPoints > 1 ? 150e6 : 320e6;   // iPhone : mémoire plus limitée
+  while (decoded.size > 1 && bytes() > cap) { const k = decoded.keys().next().value; if (current && k === current.id && decoded.size > 1) { const b0 = decoded.get(k); decoded.delete(k); decoded.set(k, b0); continue; } decoded.delete(k); }
   return buf;
 }
 
@@ -1082,7 +1109,7 @@ const E = {
     audio.currentTime = pos;
     if (was) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
   },
-  reset() { S.abort(); S.loadedFor = null; this.scratching = false; this.stopSource(); audio.pause(); this.playing = false; this.p0 = 0; this.buf = this.base = this.loopBuf = null; this.loopInf = null; this.kind = 'element'; this.muteEl(); },
+  reset() { S.abort(); if (S.node && S.loadedFor) S.node.port.postMessage({ type: 'unload' }); S.loadedFor = null; this.scratching = false; this.stopSource(); audio.pause(); this.playing = false; this.p0 = 0; this.buf = this.base = this.loopBuf = null; this.loopInf = null; this.kind = 'element'; this.muteEl(); },
   /* Loop ∞ : on remplace le son par sa version « bouclable » (même début, queue recollée) */
   inLoop(pos) { const L = this.loopInf; return L && pos >= L.end ? L.start + ((pos - L.start) % (L.end - L.start)) : pos; },
   setLoopInf(lb) {
@@ -1100,6 +1127,7 @@ const E = {
   }
 };
 // Le lecteur natif peut être mis en pause par iOS (appel, autre app…)
+audio.addEventListener('error', () => dlog('audio', 'lecteur natif : erreur ' + (audio.error ? audio.error.code + ' ' + (audio.error.message || '') : '?')));
 audio.addEventListener('play',  () => {
   if (E.kind === 'buffer' || E.scratching) { audio.pause(); slog('Audio en double évité (lecteur natif relancé en fond)'); return; }
   if (!E.playing) { E.playing = true; E.onstate(); }
@@ -1247,6 +1275,7 @@ function analyzeLoop(buf, bpm, fixedDown) {
 function buildLoopBuffer(buf, downbeat, bars, bpm, wrap) {
   const sr = buf.sampleRate, d = Math.round(downbeat * sr), N = Math.round(bars * 240 / bpm * sr);
   const end = Math.min(buf.length, d + N), loopLen = end - d;
+  if (!wrap || end >= buf.length) return { buffer: buf, start: d / sr, end: end / sr };   // rien à recoller : pas de copie (mémoire)
   const out = ctx().createBuffer(buf.numberOfChannels, buf.length, sr);   // son entier : on peut naviguer au-delà de la boucle
   const fade = Math.min(Math.round(sr * 0.004), loopLen >> 2);
   // Garde-fou : la queue recollée est fondue. Une vraie queue de reverb (faible) s'éteint sur
@@ -2167,8 +2196,11 @@ function refreshCardIcons() {
 function renderAll() { resetVersionCache(); renderLibrary(); if (view) renderCollection(); }
 
 /* ---------- Chargement / lecture ---------- */
+const decodedMB = () => { let n = 0; for (const b of decoded.values()) n += b.length * b.numberOfChannels * 4; return Math.round(n / 1e6); };
 async function loadTrack(t, autoplay, startAt = 0) {
   current = t;
+  dlog('lecture', `${t.title} (${fmt(t.duration)}) · sons décodés en mémoire : ${decoded.size} (${decodedMB()} Mo)`);
+  try { localStorage.setItem('platine.lastplay', t.title); } catch (e) {}
   let url = audioURLs.get(t.id);
   if (!url) {
     const wasCloud = !!(t.path && DESK && t.cloud);
@@ -2863,7 +2895,7 @@ function predecodeVersions() {
   clearTimeout(preTimer);
   preTimer = setTimeout(async () => {
     const t = current; if (!t) return;
-    for (const u of versionsOf(t).slice(0, 4)) { if (current !== t) return; try { await getBuffer(u); } catch (e) {} await sleep(50); }
+    for (const u of versionsOf(t).slice(0, 3)) { if (current !== t) return; if ((u.duration || 0) > 75) continue; try { await getBuffer(u); } catch (e) {} await sleep(50); }   // sons courts seulement (mémoire)
   }, 600);
 }
 
@@ -3221,7 +3253,9 @@ $('#bScratch').onclick = () => { setScratch(!scratchOn); if (scratchOn) toast('S
   let g = null;
   const ang = e => { const r = wrap.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; };
   wrap.addEventListener('pointerdown', e => {
-    if (!scratchOn || !current || !S.can() || g) return;
+    if (!scratchOn || !current || g) return;
+    if (!S.can()) S.prep();                          // copie pour le disque préparée seulement quand on le touche (mémoire)
+    if (!S.can()) return;
     e.preventDefault(); wrap.setPointerCapture(e.pointerId);
     g = { id: e.pointerId, last: ang(e), acc: 0, base: angle, hist: [[performance.now(), 0]] };
     S.begin(E.time()); discHeld = true;            // doigt posé : tape stop
@@ -3252,7 +3286,6 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (spanTarget != null && viewSpan != null && Math.abs(spanTarget - viewSpan) > 0.001) viewSpan += (spanTarget - viewSpan) * Math.min(1, dt * 12);   // zoom animé
   if (current && playerOpen) {
-    S.prep();
     if (!fine.has(current.id) && decoded.has(current.id)) fine.set(current.id, finePeaks(decoded.get(current.id)));
   }
   const target = !current ? 0 : E.scratching ? 360 / TURN_SECONDS * S.rate : !E.playing ? 0 : 360 / TURN_SECONDS * E.signedRate();
@@ -3394,7 +3427,7 @@ function renderSettings() {
   $('#stLoop').classList.toggle('on', prefs.loopDefault);
   $('#stAutoBpm').classList.toggle('on', prefs.autoBpm !== false);
   document.querySelectorAll('#stDown button').forEach(b => b.classList.toggle('on', b.dataset.d === prefs.downDefault));
-  renderSyncLog();
+  renderSyncLog(); renderDlog();
   $('#stVersion').textContent = `Platine v${BUILD.version} · build ${BUILD.n} · ${BUILD.date}`;
   const TL = { prods: ['Projets', 'tes prods, versions regroupées'], folders: ['Dossiers', 'tes dossiers synchronisés'], all: ['Tous', 'tous les sons, recherche et tri'], playlists: ['Playlists', 'manuelles et intelligentes'] };
   $('#stTabs').innerHTML = TAB_IDS.map(k => `<div class="ctl row"><span>${TL[k][0]} <small style="opacity:.6">· ${TL[k][1]}</small></span><button class="switch${prefs.tabs[k] !== false ? ' on' : ''}" data-tab="${k}"><i></i></button></div>`).join('');
@@ -3752,6 +3785,26 @@ async function bpmQueue() {
     }
   } finally { bpmBusy = false; if (n) { prodCache = null; renderLibrary(); } }
 }
+
+/* ---------- Journal technique : affichage et copie ---------- */
+function dlogText() {
+  let L = []; try { L = JSON.parse(localStorage.getItem(DLOG) || '[]'); } catch (e) {}
+  const f = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const head = [`Platine build ${BUILD.n} (v${BUILD.version}) — journal copié le ${f(Date.now())}`, navigator.userAgent, `${tracks.length} sons · écran ${screen.width}×${screen.height} · ${DESK ? 'app Mac' : 'iPhone/web'}`, ''];
+  return head.concat(L.map(([t, k, m]) => `${f(t)}  [${k}] ${m}`)).join('\n');
+}
+function renderDlog() {
+  let L = []; try { L = JSON.parse(localStorage.getItem(DLOG) || '[]'); } catch (e) {}
+  const crash = L.filter(x => x[1] === 'PLANTAGE').pop(), errs = L.filter(x => /ERREUR|erreur/.test(x[1])).length;
+  $('#dlogInfo').textContent = `${L.length} entrées · ${errs} erreur${errs > 1 ? 's' : ''}` + (crash ? ` · dernier plantage : ${new Date(crash[0]).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ' · aucun plantage noté') + '. Après un plantage, copie le journal et colle-le dans la conversation avec Claude.';
+}
+$('#dlogCopy').onclick = () => {
+  const txt = dlogText();
+  const ok = () => toast('Journal copié : colle-le dans la conversation avec Claude', 3000);
+  const fallback = () => { const ta = document.createElement('textarea'); ta.value = txt; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); ok(); } catch (e) { toast('Copie impossible'); } ta.remove(); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, fallback); else fallback();
+};
+$('#dlogClear').onclick = () => { localStorage.removeItem(DLOG); dlog('info', 'Journal effacé'); renderDlog(); toast('Journal effacé'); };
 
 /* ---------- Divers ---------- */
 let toastTimer;

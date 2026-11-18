@@ -40,6 +40,7 @@ class ScratchProcessor extends AudioWorkletProcessor {
         this.mode = 'spin'; this.tv = d.targetRate * k; this.loop = d.loop; this.settled = false; break;
       case 'target': this.tv = d.targetRate * k; this.settled = false; break;
       case 'stop': this.gTarget = 0; this.stopping = true; break;
+      case 'unload': this.ch = null; this.len = 0; this.mode = 'idle'; this.g = 0; break;   // libère la mémoire
     }
   }
   process(inputs, outputs) {
