@@ -809,7 +809,7 @@ window.addEventListener('unhandledrejection', e => { const r = e.reason; dlog('E
   document.addEventListener('visibilitychange', () => { try { localStorage.setItem('platine.vis', document.visibilityState); } catch (e) {} });
 })();
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 45, version: '4.6.1', date: '18/11/2026' };
+const BUILD = { n: 46, version: '4.7', date: '18/11/2026' };
 dlog('info', `Démarrage build ${BUILD.n} · ${navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 120)} · écran ${screen.width}×${screen.height}`);
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
@@ -1580,25 +1580,33 @@ async function syncFolder(fileList, opts = {}) {
   const byName = new Map();
   for (const t of tracks) { const k = (t.fileName || '').toLowerCase(); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(t); }
   const byPath = new Map(tracks.filter(t => t.path).map(t => [t.path, t]));
-  const findExisting = (f, rel) => {
+  const scanPaths = new Set(D ? files.map(f => f.path) : []);
+  const claimed = new Set();                        // un son de l'app ne correspond qu'à un seul fichier
+  // 1er passage : même chemin (fichier resté à sa place)
+  const samePathOf = (f, rel) => {
     if (D) { const t = byPath.get(f.path); return t ? { t, same: f.cloud || t.cloud || (t.size === f.size && Math.abs((t.mtime || 0) - f.lastModified) < 3000) } : null; }
     const cands = byName.get(f.name.toLowerCase()) || [];
-    const samePath = cands.find(t => t.src && (t.src === rel || t.src.endsWith('/' + rel) || rel.endsWith('/' + t.src)));
-    if (samePath) return { t: samePath, same: samePath.size === f.size };
-    const twin = cands.find(t => t.size === f.size);
-    return twin ? { t: twin, same: true } : null;
+    const t = cands.find(t => t.src && (t.src === rel || t.src.endsWith('/' + rel) || rel.endsWith('/' + t.src)));
+    return t ? { t, same: t.size === f.size } : null;
+  };
+  // 2e passage : même nom + même taille ailleurs = fichier déplacé (il garde ses réglages)
+  const twinOf = f => {
+    const cands = (byName.get(f.name.toLowerCase()) || []).filter(t => !claimed.has(t) && t.size === f.size && (!D || !scanPaths.has(t.path)));
+    return cands.length ? { t: cands[0], same: true, moved: true } : null;
   };
   const seen = new Set();
-  let added = 0, updated = 0, failed = 0, todo = 0, lastErr = '';
-  const plan = files.map(f => { const rel = f.webkitRelativePath || f.name; const ex = findExisting(f, rel); if (!ex || !ex.same) todo++; return { f, rel, ex }; });
+  let added = 0, updated = 0, failed = 0, todo = 0, moved = 0, removed = 0, lastErr = '';
+  const plan = files.map(f => { const rel = f.webkitRelativePath || f.name; let ex = samePathOf(f, rel); if (ex && claimed.has(ex.t)) ex = null; if (ex) claimed.add(ex.t); return { f, rel, ex }; });
+  for (const x of plan) if (!x.ex) { x.ex = twinOf(x.f); if (x.ex) claimed.add(x.ex.t); }
+  for (const x of plan) if (!x.ex || !x.ex.same) todo++;
   // Sous-dossier d'un dossier déjà synchronisé (ex. une semaine de LOOPS) ? On garde le chemin complet.
   let prefix = '';
-  for (const { rel, ex } of plan) if (ex && ex.t.src && ex.t.src !== rel && ex.t.src.endsWith('/' + rel)) { prefix = ex.t.src.slice(0, ex.t.src.length - rel.length); break; }
+  for (const { rel, ex } of plan) if (ex && !ex.moved && ex.t.src && ex.t.src !== rel && ex.t.src.endsWith('/' + rel)) { prefix = ex.t.src.slice(0, ex.t.src.length - rel.length); break; }
   const srcRoot = prefix ? prefix.split('/')[0] : root;
   // Dossier parent d'un dossier déjà synchronisé (ex. AUDIO qui contient LOOPS) :
   // on rattache les sons existants à ce dossier, sans les réimporter.
   const absorbed = new Set();
-  if (!prefix) for (const { rel, ex } of plan) if (ex && ex.same && ex.t.src && ex.t.src !== rel && (D || rel.endsWith('/' + ex.t.src))) {
+  if (!prefix) for (const { rel, ex } of plan) if (ex && ex.same && !ex.moved && ex.t.src && ex.t.src !== rel && (D || rel.endsWith('/' + ex.t.src))) {
     absorbed.add(ex.t.src.split('/')[0]); ex.t.src = rel; dbPut(ex.t);
   }
   if (absorbed.size) { const S1 = loadSources(); absorbed.forEach(r => { if (r !== srcRoot) delete S1[r]; }); saveSources(S1); }
@@ -1614,14 +1622,19 @@ async function syncFolder(fileList, opts = {}) {
   if (todo && !D) toast(`Synchro : ${todo} son${todo > 1 ? 's' : ''} à importer…`, 0);
   let n = 0;
   for (const { f, rel, ex } of plan) {
-    seen.add(rel); if (ex) seen.add(ex.t.src);
-    if (ex && ex.same) continue;                      // déjà à jour
-    n++; if (!D) toast(`Synchro ${n}/${todo} · ${f.name}`, 0);
     const full = prefix + rel, parts = full.split('/');
     // nom du dossier : chemin après le dossier synchronisé le plus proche (ex. AUDIO/LOOPS/2026 S46 → « 2026 S46 »)
     let cut = 1; for (let i = parts.length - 2; i >= 1; i--) if (knownRoots.has(parts[i])) { cut = i + 1; break; }
     const dirs = parts.slice(cut, -1);
     const project = parts.length > 1 ? (dirs.length ? dirs.join(' / ') : parts[cut - 1]) : IMPORTS;
+    seen.add(rel); seen.add(full);
+    if (ex && ex.moved) {                             // déplacé dans iCloud : on le suit, réglages conservés
+      Object.assign(ex.t, { src: full, project, mtime: f.lastModified || ex.t.mtime, ...(D ? { path: f.path, cloud: f.cloud } : {}) });
+      await dbPut(ex.t); moved++; continue;
+    }
+    if (ex) seen.add(ex.t.src);
+    if (ex && ex.same) continue;                      // déjà à jour
+    n++; if (!D) toast(`Synchro ${n}/${todo} · ${f.name}`, 0);
     if (D) {                                          // Mac : rien à copier, analyse en arrière-plan
       if (ex) { Object.assign(ex.t, { size: f.size, mtime: f.lastModified, cloud: f.cloud, pending: true }); decoded.delete(ex.t.id); await dbPut(ex.t); updated++; }
       else { const t = linkFile(f, { project, src: full }); await dbPut(t); added++; }
@@ -1634,7 +1647,17 @@ async function syncFolder(fileList, opts = {}) {
     if (n % 10 === 0) { renderLibrary(); await sleep(30); }          // laisse respirer l'iPhone
   }
   try { wake && wake.release(); } catch (e) {}
-  const missing = prefix ? 0 : tracks.filter(t => t.src && t.src.split('/')[0] === root && !seen.has(t.src)).length;
+  // Supprimés d'iCloud : retirés de Platine (dans le dossier synchronisé seulement)
+  const scope = (prefix || '') + root + '/';
+  const inScope = tracks.filter(t => t.src && t.src.startsWith(scope));
+  const gone = inScope.filter(t => !seen.has(t.src));
+  let doRemove = gone.length > 0;
+  if (doRemove && gone.length > 20 && gone.length > 0.3 * inScope.length) {   // garde-fou : beaucoup d'un coup
+    doRemove = !Q && confirm(`${gone.length} sons ne sont plus dans « ${root} » (supprimés ou déplacés hors du dossier).\n\nLes retirer de Platine ?`);
+    if (!doRemove) slog(`${gone.length} sons absents de « ${root} » gardés (non confirmé)`);
+  }
+  if (doRemove) { for (const t of gone) { await deleteTrack(t); removed++; } slog(`Retirés (supprimés d'iCloud) : ${gone.slice(0, 12).map(t => t.title).join(', ')}${gone.length > 12 ? '…' : ''}`); }
+  const missing = doRemove ? 0 : gone.length;
   localStorage.setItem('platine.lastSync', JSON.stringify({ at: Date.now(), root: srcRoot }));
   { const S0 = loadSources(); S0[srcRoot] = { ...(S0[srcRoot] || {}), at: Date.now(), ...(opts.path && !prefix ? { path: opts.path } : {}) }; saveSources(S0); if (D && opts.path && !prefix) DESK.watch(opts.path); }
   syncing = false; $('#btnSync').classList.remove('spin');
@@ -1642,6 +1665,8 @@ async function syncFolder(fileList, opts = {}) {
   const msg = [];
   if (added) msg.push(`${added} ajouté${added > 1 ? 's' : ''}`);
   if (updated) msg.push(`${updated} mis à jour`);
+  if (moved) msg.push(`${moved} déplacé${moved > 1 ? 's' : ''}`);
+  if (removed) msg.push(`${removed} retiré${removed > 1 ? 's' : ''} (supprimé${removed > 1 ? 's' : ''} d'iCloud)`);
   if (failed) msg.push(`${failed} illisible${failed > 1 ? 's' : ''}`);
   if (missing) msg.push(`${missing} absent${missing > 1 ? 's' : ''} du dossier`);
   const label = prefix ? `« ${root} » (dans « ${srcRoot} »)` : `« ${root} »`;
