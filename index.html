@@ -809,7 +809,7 @@ window.addEventListener('unhandledrejection', e => { const r = e.reason; dlog('E
   document.addEventListener('visibilitychange', () => { try { localStorage.setItem('platine.vis', document.visibilityState); } catch (e) {} });
 })();
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 46, version: '4.7', date: '18/11/2026' };
+const BUILD = { n: 47, version: '4.7.1', date: '26/11/2026' };
 dlog('info', `Démarrage build ${BUILD.n} · ${navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 120)} · écran ${screen.width}×${screen.height}`);
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
@@ -2402,8 +2402,8 @@ function renderPlayer() {
   if (!current) return;
   const t = current, s = t.settings;
   const PI = prodInfo(t);
-  $('#pTitle').textContent = PI ? PI.name : t.title;
-  $('#pArtist').textContent = [PI ? PI.version : '', t.artist, t.project].filter(Boolean).join(' · ') || ' ';
+  $('#pTitle').textContent = PI ? PI.name : workTitle(t);
+  $('#pArtist').textContent = [PI ? PI.version : '', artistOf(t), t.project].filter(Boolean).join(' · ') || ' ';
   $('#discLabel').style.backgroundImage = coverCSS(t); $('#discLabel').dataset.art = coverURLs.has(t.id) ? '' : artKey(t);
   $('#tDur').textContent = fmt(t.duration);
   renderChips();
@@ -2816,12 +2816,29 @@ function checkLoop() {                              // mode Tempo : on reboucle 
    commençant par l'autre dès 5 lettres (« Nolah_Synth », « nolahstring »).
    Une version sans BPM dans son nom hérite du BPM des autres versions.        */
 const VSTOP = new Set(['untitled', 'loop', 'loops', 'beat', 'beats', 'audio', 'sample', 'samples', 'test', 'final', 'master', 'bounce', 'export', 'track', 'instru', 'instrumental', 'prod', 'gntk', 'song', 'demo', 'idea', 'nouveau', 'version', 'copie', 'copy']);
+/* « Artiste - Titre » : ce qui est avant le tiret est l'artiste ; seul le titre compte
+   pour regrouper les versions (« Parisienne Blues » et « Parisienne Blues (Real ZAFY) »). */
+const deaccent = x => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const stripTags = x => x.replace(/\b\d{2,3}(?:[.,]\d)?\s*-?\s*b\.?p\.?m?\b/gi, ' ').replace(/\bbpm\s*\d{2,3}\b/gi, ' ').replace(/\b[A-G][#b]?\s?(?:min|maj|minor|major|m)\b/g, ' ').replace(TAGS, ' ');
+function splitArtist(title) {
+  const m = /^(.+?)\s+[-–—]\s+(.+)$/.exec(title || '');
+  if (!m || m[1].length > 40 || /\d{2,3}\s*b\.?p\.?m/i.test(m[1])) return null;
+  const work = m[2].trim(), core = stripTags(work.replace(/[\[(][^\])]*[\])]/g, ' ').replace(/@\S+/g, ' ')).replace(/[_\s]+/g, ' ').trim();
+  if (deaccent(core).replace(/[^a-z0-9]/g, '').length < 3) return null;   // « Nolah - 140BPM » : pas un artiste
+  return { artist: m[1].trim(), work, core };
+}
+const workTitle = t => { const a = splitArtist(t.title); return a ? a.work : t.title; };
+const artistOf = t => t.artist || (splitArtist(t.title) || {}).artist || '';
 const vKeyCache = new Map();
 function vKey(t) {
   let k = vKeyCache.get(t.id);
   if (k !== undefined) return k;
-  const s = (t.title || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  k = s.split(/[^a-z0-9]+/).find(x => x && !/^\d+$/.test(x)) || '';
+  const a = splitArtist(t.title);
+  if (a) k = deaccent(a.core).replace(/[^a-z0-9]+/g, ' ').trim();   // titre complet (sans l'artiste ni les parenthèses)
+  else {
+    const s = deaccent(t.title || '');
+    k = s.split(/[^a-z0-9]+/).find(x => x && !/^\d+$/.test(x)) || '';
+  }
   if (k.length < 3 || VSTOP.has(k)) k = '';
   vKeyCache.set(t.id, k); return k;
 }
@@ -2831,8 +2848,8 @@ function versionsOf(t) {
     if (u === t) return false;
     const j = vKey(u); if (!j) return false;
     if (j === k) return true;
-    const short = j.length < k.length ? j : k;
-    return short.length >= 5 && (j.startsWith(k) || k.startsWith(j));
+    const short = j.length < k.length ? j : k, long = short === j ? k : j;
+    return short.length >= 5 && long.startsWith(short) && (!short.includes(' ') || long[short.length] === ' ');   // « parisienne blues » ⊂ « parisienne blues maquette »
   });
 }
 const vbCache = new Map();
@@ -2863,11 +2880,21 @@ function prodInfo(t) {                            // { nom de la prod, nom de la
   const vs = versionsOf(t); if (!vs.length) return null;
   const all = [t, ...vs], base = all.map(vKey).reduce((a, b) => (b.length < a.length ? b : a));
   let name = '';
-  for (const u of all) { const m = (u.title || '').match(/^[^A-Za-z0-9]*([A-Za-z0-9]+)/); if (m && m[1].toLowerCase() === base) { name = m[1]; break; } }
-  if (!name) name = base.charAt(0).toUpperCase() + base.slice(1);
+  for (const u of all) {
+    const a = splitArtist(u.title);
+    if (a) { if (deaccent(a.core).replace(/[^a-z0-9]+/g, ' ').trim() === base) { name = a.core; break; } continue; }
+    const m = (u.title || '').match(/^[^A-Za-z0-9]*([A-Za-z0-9]+)/); if (m && m[1].toLowerCase() === base) { name = m[1]; break; }
+  }
+  if (!name) name = base.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   return { name, base, version: vLabel(t, base), count: all.length };
 }
 function shortVersionName(u, base) {
+  const sa = splitArtist(u.title);
+  if (sa) {                                        // « Parisienne Blues (Real ZAFY) » → « Real ZAFY »
+    const words = sa.work.split(/\s+/), n = base ? base.split(' ').length : 0;
+    let r = words.slice(n).join(' ').replace(/^[\s\-–(\[]+|[\s)\]]+$/g, '').replace(/[()\[\]]/g, '').trim();
+    return (r || 'Original').slice(0, 22);
+  }
   const t = u.title || '', low = t.toLowerCase();
   let r = base && low.startsWith(base) ? t.slice(base.length) : t;
   r = r.replace(/^[^a-z0-9]+/i, '').replace(/[_]+/g, ' ').trim();
@@ -2949,7 +2976,7 @@ function prods() {
     // version principale : celle qui a un BPM dans son nom, au nom le plus court
     const main = pickMain(list);
     const PI = list.length > 1 ? prodInfo(main) : null;
-    const name = PI ? PI.name : cleanName(main.title);
+    const name = PI ? PI.name : cleanName(workTitle(main));
     const date = Math.max(...list.map(t => t.mtime || t.created || 0));
     return { kind: 'prod', key: main.id, name, list, main, date, bpm: bpmOf(main) };
   });
@@ -3336,8 +3363,8 @@ function updateMini() {
   $('#mini').classList.remove('off');
   $('#miniCover').style.backgroundImage = coverCSS(current); $('#miniCover').dataset.art = coverURLs.has(current.id) ? '' : artKey(current);
   $('#miniTitle').textContent = current.title;
-  { const PI = prodInfo(current); $('#miniTitle').textContent = PI ? `${PI.name} · ${PI.version}` : current.title; }
-  $('#miniArtist').textContent = [current.project && current.project !== IMPORTS ? current.project : '', current.artist].filter(Boolean).join(' • ') || fmt(current.duration);
+  { const PI = prodInfo(current); $('#miniTitle').textContent = PI ? `${PI.name} · ${PI.version}` : workTitle(current); }
+  $('#miniArtist').textContent = [artistOf(current), current.project && current.project !== IMPORTS ? current.project : ''].filter(Boolean).join(' • ') || fmt(current.duration);
 }
 
 /* ---------- Écran verrouillé / Centre de contrôle ---------- */
@@ -3346,7 +3373,7 @@ function updateMediaSession() {
   const art = coverURLs.get(current.id);
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: current.title, artist: current.artist || '', album: current.project || 'Platine',
+      title: workTitle(current), artist: artistOf(current), album: current.project || 'Platine',
       artwork: art ? [{ src: art, sizes: '700x700', type: 'image/jpeg' }] : [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }]
     });
   } catch (e) {}
