@@ -340,6 +340,7 @@ html:not(.desktop) .desk-only{display:none!important}
 .desktop .grid:not(.is-list):not(.is-tiles){grid-template-columns:repeat(auto-fill,minmax(168px,1fr))}
 .desktop .grid.is-tiles{grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
 .desktop .row:hover,.desktop .ptile:hover{background:var(--surface2)}
+.desktop .row,.desktop .ptile,.desktop .frow,.desktop #pMeta,.desktop .mini-txt{-webkit-user-drag:element}
 .desktop .row{cursor:default;border-radius:10px;padding-left:6px;padding-right:6px}
 body.wide #library,body.wide #collection{right:460px}
 body.wide #player{left:auto;width:460px;border-left:1px solid var(--line);transform:none!important;visibility:visible;padding-top:30px;overflow-y:auto}
@@ -809,7 +810,7 @@ window.addEventListener('unhandledrejection', e => { const r = e.reason; dlog('E
   document.addEventListener('visibilitychange', () => { try { localStorage.setItem('platine.vis', document.visibilityState); } catch (e) {} });
 })();
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 47, version: '4.7.1', date: '26/11/2026' };
+const BUILD = { n: 48, version: '4.7.2', date: '27/11/2026' };
 dlog('info', `Démarrage build ${BUILD.n} · ${navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 120)} · écran ${screen.width}×${screen.height}`);
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
@@ -3734,15 +3735,25 @@ if (DESK) {
   document.documentElement.classList.add('desktop');
   DESK.onChange(root => syncDesktop(root, { quiet: true }));
   // fichiers glissés vers d'autres apps (Logic, WhatsApp, Mail, Finder…)
-  document.addEventListener('pointerdown', e => { const el = e.target.closest('.row,.card[data-i]'); if (el && !el.draggable) el.draggable = true; }, true);
+  // Glisser-déposer vers FL Studio, Logic, Finder… : lignes, projets, dossiers, titre de la platine, mini-lecteur
+  const DRAG_SRC = '.row,.card[data-i],.frow,#pMeta,.mini-txt';
+  const dragIds = el => {
+    if (el.matches('.row')) return selOn && selIds.has(el.dataset.id) ? [...selIds] : [el.dataset.id];
+    if (el.matches('.card[data-i]')) { const it = libItems[+el.dataset.i]; return it ? (it.kind === 'prod' ? [it.main.id] : it.list.map(t => t.id)) : []; }
+    if (el.matches('.frow')) return folderTracks([...folderPath().path, el.dataset.dir].join('/'), true).map(t => t.id);
+    return current ? [current.id] : [];
+  };
+  document.addEventListener('pointerdown', e => {
+    const el = e.target.closest(DRAG_SRC); if (!el) return;
+    if (!el.draggable) el.draggable = true;
+    for (const id of dragIds(el).slice(0, 20)) { const t = byId(id); if (t && t.path && t.cloud && DESK.prefetch) DESK.prefetch(t.path).then(ok => { if (ok) { t.cloud = false; dbPut(t); } }); }   // iCloud : on prépare le fichier
+  }, true);
   document.addEventListener('dragstart', e => {
-    const row = e.target.closest('.row'), card = e.target.closest('.card[data-i]');
-    let ids = [];
-    if (row) ids = selOn && selIds.has(row.dataset.id) ? [...selIds] : [row.dataset.id];
-    else if (card) { const it = libItems[+card.dataset.i]; if (it) ids = it.kind === 'prod' ? [it.main.id] : it.list.map(t => t.id); }
-    const paths = deskPaths(ids); if (!paths.length) return;
+    const el = e.target.closest(DRAG_SRC); if (!el) return;
+    const paths = deskPaths(dragIds(el)); if (!paths.length) return;
     e.preventDefault(); DESK.startDrag(paths);
   });
+  if (DESK.onDragMissing) DESK.onDragMissing(n => toast(`${n} son${n > 1 ? 's' : ''} encore dans iCloud : téléchargement en cours, réessaie dans un instant`, 3500));
   $('#pFinder').onclick = () => { if (current && current.path) DESK.reveal(current.path); };
   // grand écran : le lecteur reste ouvert à droite
   const lay = () => { document.body.classList.toggle('wide', wideDesk()); if (wideDesk() && current && !playerOpen) openPlayer(); };

@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const ok = location.protocol === 'file:' || location.origin === 'https://54s6h64wdz-web.github.io';
 if (ok) contextBridge.exposeInMainWorld('platineDesktop', {
   platform: process.platform,
-  version: '1.0.0',
+  version: '1.1.0',
   chooseFolder: () => ipcRenderer.invoke('chooseFolder'),
   roots: () => ipcRenderer.invoke('roots'),
   forgetRoot: p => ipcRenderer.invoke('forgetRoot', p),
@@ -13,6 +13,8 @@ if (ok) contextBridge.exposeInMainWorld('platineDesktop', {
   share: paths => ipcRenderer.invoke('share', paths),
   reveal: p => ipcRenderer.send('reveal', p),
   startDrag: paths => ipcRenderer.send('drag', paths),
+  prefetch: p => ipcRenderer.invoke('prefetch', p),
+  onDragMissing: cb => ipcRenderer.on('drag-missing', (e, n) => cb(n)),
   watch: root => ipcRenderer.invoke('watch', root),
   onChange: cb => ipcRenderer.on('fs-change', (e, root) => cb(root))
 });

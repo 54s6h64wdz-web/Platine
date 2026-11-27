@@ -104,11 +104,17 @@ ipcMain.handle('share', async (e, paths) => {
 });
 ipcMain.on('reveal', (e, p) => { if (allowed(p)) shell.showItemInFolder(p); });
 const dragIcon = () => { try { return nativeImage.createFromPath(path.join(__dirname, 'build', 'icon.png')).resize({ width: 48, height: 48 }); } catch (e) { return nativeImage.createEmpty(); } };
+// Glisser vers une autre app (FL Studio, Logic, Finder…) : seulement les fichiers déjà sur le Mac.
+// Ceux qui ne sont que dans iCloud sont téléchargés en fond et le site prévient.
 ipcMain.on('drag', (e, paths) => {
-  paths = (paths || []).filter(p => allowed(p) && fs.existsSync(p));
-  if (!paths.length) return;
-  e.sender.startDrag({ file: paths[0], files: paths, icon: dragIcon() });
+  paths = (paths || []).filter(allowed);
+  const local = paths.filter(p => fs.existsSync(p)), missing = paths.filter(p => !fs.existsSync(p));
+  if (missing.length) { missing.forEach(p => ensureLocal(p).catch(() => {})); e.sender.send('drag-missing', missing.length); }
+  if (!local.length) return;
+  e.sender.startDrag({ file: local[0], files: local, icon: dragIcon() });
 });
+// Préparer un fichier iCloud (au survol / au toucher) pour qu'il soit prêt à être glissé
+ipcMain.handle('prefetch', async (e, p) => { if (!allowed(p)) return false; try { await ensureLocal(p); return true; } catch (err) { return false; } });
 
 /* Surveillance des dossiers : prévient le site quand un son apparaît / change */
 const watchers = new Map(), timers = new Map();

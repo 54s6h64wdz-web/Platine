@@ -1,7 +1,7 @@
 {
   "name": "platine",
   "productName": "Platine",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Platine — lecteur audio pour beatmakers (version Mac)",
   "author": "genetic",
   "main": "main.js",
