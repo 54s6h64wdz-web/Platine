@@ -810,7 +810,7 @@ window.addEventListener('unhandledrejection', e => { const r = e.reason; dlog('E
   document.addEventListener('visibilitychange', () => { try { localStorage.setItem('platine.vis', document.visibilityState); } catch (e) {} });
 })();
 /* Numéro de build : à augmenter à chaque mise à jour (et le même dans sw.js) */
-const BUILD = { n: 48, version: '4.7.2', date: '27/11/2026' };
+const BUILD = { n: 49, version: '4.7.3', date: '27/11/2026' };
 dlog('info', `Démarrage build ${BUILD.n} · ${navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 120)} · écran ${screen.width}×${screen.height}`);
 /* =========================================================
    Platine — lecteur audio perso pour beatmakers (PWA)
@@ -3467,7 +3467,7 @@ async function deleteTrack(t, byHand) {
 
 /* ---------- Paramètres ---------- */
 const AB4_DEFAULT = true;   // boucle A·B : longueur en multiples de 4 mesures
-const DISC_DEFAULT = { cap: 2, fling: 1, tapeStop: 0.28, torque: 0.45, brake: 0.7, ease: 0.35 };   // réglages de la platine
+const DISC_DEFAULT = { cap: 1.9, fling: 0.4, tapeStop: 0.26, torque: 3, brake: 3, ease: 0 };   // réglages choisis par Mounir   // réglages de la platine
 const PREF_DEFAULT = { autoNorm: true, loopDefault: true, downDefault: 'start', tabs: { prods: true, folders: true, all: true, playlists: true }, disc: { ...DISC_DEFAULT } };
 let prefs = { ...PREF_DEFAULT };
 try { const sv = JSON.parse(localStorage.getItem('platine.prefs') || '{}'); prefs = { ...PREF_DEFAULT, ...sv, tabs: { ...PREF_DEFAULT.tabs, ...(sv.tabs || {}) }, disc: { ...DISC_DEFAULT, ...(sv.disc || {}) } }; } catch (e) {}
